@@ -18,6 +18,12 @@ contextBridge.exposeInMainWorld('bird', {
   setBounds: (rect) => ipcRenderer.send('bird:set-bounds', rect),
   // { [networkId]: { count, dot } } for networks that have been opened.
   getStatus: () => ipcRenderer.invoke('bird:get-status'),
+  // Per-app tweaks (e.g. hide Instagram Reels). Options come from the shell;
+  // choices are saved per account on this device.
+  getCustomizations: () => ipcRenderer.invoke('bird:get-customizations'),
+  getAppPrefs: (networkId) => ipcRenderer.invoke('bird:get-app-prefs', networkId),
+  setAppPref: (networkId, optionId, value) =>
+    ipcRenderer.send('bird:set-app-pref', networkId, optionId, value),
   onStatus: (cb) => subscribe('bird:status', cb),
   // Main asks the UI to switch network (e.g. a notification was clicked).
   onActiveNetwork: (cb) => subscribe('bird:active-network', cb),

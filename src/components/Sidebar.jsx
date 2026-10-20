@@ -1,9 +1,8 @@
-import AccountBar from './AccountBar'
 import Avatar from './Avatar'
 import AddAppMenu from './AddAppMenu'
 import NetworkIcon from './NetworkIcon'
 import { APPS } from '../data'
-import { ComposeIcon, LayersIcon, MuteIcon, SearchIcon, MoonIcon, SunIcon } from './Icons'
+import { ComposeIcon, LayersIcon, MuteIcon, SearchIcon } from './Icons'
 
 const FILTERS = [
   { id: 'inbox', label: 'Inbox' },
@@ -45,9 +44,6 @@ export default function Sidebar({
   onRemoveApp,
   query,
   setQuery,
-  theme,
-  toggleTheme,
-  account,
 }) {
   const pinned = allChats.filter((c) => c.pinned && !c.archived)
   const list = chats
@@ -58,9 +54,6 @@ export default function Sidebar({
         <button className="icon-btn" aria-label="Accounts"><LayersIcon /></button>
         <h1>All Chats</h1>
         <div className="head-actions">
-          <button className="icon-btn" onClick={toggleTheme} aria-label="Toggle theme">
-            {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
-          </button>
           <button className="icon-btn" aria-label="New chat"><ComposeIcon /></button>
         </div>
       </header>
@@ -160,8 +153,6 @@ export default function Sidebar({
           </li>
         ))}
       </ul>
-
-      {account && <AccountBar user={account.user} onSignOut={account.onSignOut} />}
     </aside>
   )
 }

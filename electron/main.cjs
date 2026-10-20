@@ -1,19 +1,44 @@
+const fs = require('node:fs')
 const path = require('node:path')
 const { app, BrowserWindow, WebContentsView, ipcMain, session, shell } = require('electron')
 const { NETWORKS, ALLOWED_PERMISSIONS, isAllowedUrl, parseBadge } = require('./networks.cjs')
+const custom = require('./customizations.cjs')
 
 const DEV_URL = process.env.BIRD_DEV_URL // set by `npm run electron:dev`
 const isDev = Boolean(DEV_URL)
 
 /** @type {BrowserWindow | null} */
 let win = null
-/** @type {Map<string, { view: WebContentsView, count: number, dot: boolean }>} */
+/** @type {Map<string, { view: WebContentsView, count: number, dot: boolean, cssKey: string | null }>} */
 const views = new Map()
 let activeId = null
 // The signed-in Bird account. Each account gets its own web sessions, so one
 // account's Instagram/Discord logins are never visible to another account.
 let currentUserId = null
 let bounds = { x: 0, y: 0, width: 0, height: 0 }
+
+// ------------------------------------------------------- per-app tweaks
+// Saved on this device, per Bird account: { [userId]: { [networkId]: { [optionId]: true } } }.
+let allPrefs = {}
+const prefsPath = () => path.join(app.getPath('userData'), 'app-prefs.json')
+
+function loadPrefs() {
+  try {
+    allPrefs = JSON.parse(fs.readFileSync(prefsPath(), 'utf8'))
+  } catch {
+    allPrefs = {}
+  }
+}
+
+function savePrefs() {
+  try {
+    fs.writeFileSync(prefsPath(), JSON.stringify(allPrefs, null, 2))
+  } catch (err) {
+    console.error('[prefs] could not save', err)
+  }
+}
+
+const prefsFor = (networkId) => allPrefs[currentUserId]?.[networkId] ?? {}
 
 // ---------------------------------------------------------------- helpers
 function sendToUI(channel, payload) {
@@ -91,11 +116,29 @@ function createNetworkView(id) {
     if (!isAllowedUrl(id, url)) {
       event.preventDefault()
       openExternal(url)
+      return
+    }
+    // Page loads the user has switched off (e.g. Instagram Reels) just don't happen.
+    if (custom.isBlocked(id, prefsFor(id), url)) {
+      event.preventDefault()
+      return
+    }
+    const to = custom.rewriteUrl(id, prefsFor(id), url)
+    if (to) {
+      event.preventDefault()
+      wc.loadURL(to)
     }
   })
 
-  const entry = { view, count: 0, dot: false }
+  const entry = { view, count: 0, dot: false, cssKey: null }
   views.set(id, entry)
+
+  // Single-page apps change address without a page load; enforce the same rules.
+  wc.on('did-navigate-in-page', (_event, url, isMainFrame) => {
+    if (isMainFrame) enforceRules(id)
+  })
+  // Inserted CSS belongs to one document, so apply it to every new page.
+  wc.on('dom-ready', () => applyCss(id))
 
   // Unread state comes from the page title only (no DOM access).
   wc.on('page-title-updated', (_event, title) => {
@@ -116,9 +159,45 @@ function createNetworkView(id) {
   view.setVisible(false)
   applyBounds(view)
   win.contentView.addChildView(view)
-  wc.loadURL(net.url)
+  wc.loadURL(custom.startUrl(id, prefsFor(id)) ?? net.url)
   sendToUI('bird:status', statusSnapshot())
   return entry
+}
+
+// (Re)apply the user's CSS tweaks to a network's current page.
+function applyCss(id) {
+  const entry = views.get(id)
+  if (!entry || entry.view.webContents.isDestroyed()) return
+  const wc = entry.view.webContents
+  if (entry.cssKey) {
+    wc.removeInsertedCSS(entry.cssKey).catch(() => {})
+    entry.cssKey = null
+  }
+  const css = custom.buildCss(id, prefsFor(id))
+  if (css) {
+    wc
+      .insertCSS(css)
+      .then((key) => {
+        entry.cssKey = key
+      })
+      .catch(() => {})
+  }
+}
+
+// If the page the user is on now is one they've switched off, leave it.
+function enforceRules(id) {
+  const entry = views.get(id)
+  if (!entry || entry.view.webContents.isDestroyed()) return
+  const wc = entry.view.webContents
+  const url = wc.getURL()
+  const prefs = prefsFor(id)
+  if (custom.isBlocked(id, prefs, url)) {
+    if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack()
+    else wc.loadURL(custom.startUrl(id, prefs) ?? NETWORKS[id].url)
+    return
+  }
+  const to = custom.rewriteUrl(id, prefs, url)
+  if (to) wc.loadURL(to)
 }
 
 function destroyViews() {
@@ -223,6 +302,26 @@ ipcMain.on('bird:set-bounds', (_event, rect) => {
 
 ipcMain.handle('bird:get-status', () => statusSnapshot())
 
+// Customize panel: what can be tweaked, what is on for this account, and changes.
+ipcMain.handle('bird:get-customizations', () => custom.describeAll())
+
+ipcMain.handle('bird:get-app-prefs', (_event, networkId) =>
+  currentUserId && NETWORKS[networkId] ? { ...prefsFor(networkId) } : {},
+)
+
+ipcMain.on('bird:set-app-pref', (_event, networkId, optionId, value) => {
+  if (!currentUserId || !NETWORKS[networkId] || !custom.hasOption(networkId, optionId)) return
+  if (typeof value !== 'boolean') return
+  const mine = (allPrefs[currentUserId] ??= {})
+  const forNetwork = (mine[networkId] ??= {})
+  if (value) forNetwork[optionId] = true
+  else delete forNetwork[optionId]
+  savePrefs()
+  // Show the change right away in an app that is already open.
+  applyCss(networkId)
+  enforceRules(networkId)
+})
+
 // -------------------------------------------------------------- lifecycle
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -234,6 +333,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.whenReady().then(() => {
+    loadPrefs()
     createWindow()
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Sidebar from './Sidebar'
 import ChatView from './ChatView'
 import AppsStage from './AppsStage'
+import TopBar from './TopBar'
 import { api } from '../api'
 import { bird } from '../bird'
 import { useApps } from '../useApps'
@@ -43,6 +44,8 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   const [notice, setNotice] = useState(null)
   // True while the official web app for `network` fills the main pane.
   const [appOpen, setAppOpen] = useState(false)
+  // The profile menu is open: the native web view must step aside so it shows.
+  const [menuOpen, setMenuOpen] = useState(false)
   const appStatus = useBirdStatus()
   const { apps, extra: extraApps, add: addApp, remove: removeApp } = useApps(user.id)
 
@@ -55,8 +58,8 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   }, [user.id])
 
   useEffect(() => {
-    bird?.selectNetwork(appOpen ? network : null)
-  }, [appOpen, network, user.id])
+    bird?.selectNetwork(appOpen && !menuOpen ? network : null)
+  }, [appOpen, menuOpen, network, user.id])
 
   // The shell can ask us to show an app (e.g. a notification was clicked).
   useEffect(
@@ -163,7 +166,7 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
 
   let pane
   if (appOpen && network !== 'all') {
-    pane = <AppsStage network={network} />
+    pane = <AppsStage key={network} network={network} />
   } else if (load.status === 'loading') {
     pane = <Message title="Loading your chats…" />
   } else if (load.status === 'error') {
@@ -195,6 +198,14 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   }
 
   return (
+    <div className="frame">
+    <TopBar
+      user={user}
+      onSignOut={onSignOut}
+      theme={theme}
+      toggleTheme={toggleTheme}
+      onMenuOpenChange={setMenuOpen}
+    />
     <div className={`shell ${mobileChatOpen ? 'show-chat' : ''}`}>
       <Sidebar
         chats={visible}
@@ -218,9 +229,6 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
         }}
         query={query}
         setQuery={setQuery}
-        theme={theme}
-        toggleTheme={toggleTheme}
-        account={{ user, onSignOut }}
       />
       {pane}
       {notice && (
@@ -228,6 +236,7 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
           {notice} <span aria-hidden="true">×</span>
         </button>
       )}
+    </div>
     </div>
   )
 }
