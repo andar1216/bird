@@ -5,6 +5,7 @@ const { NETWORKS, ALLOWED_PERMISSIONS, isAllowedUrl, parseBadge } = require('./n
 const custom = require('./customizations.cjs')
 const { createUsageTracker } = require('./usage.cjs')
 const { createInbox, hookScript, parseReport } = require('./inbox.cjs')
+const { readerFor, normalize } = require('./pagechats.cjs')
 
 const DEV_URL = process.env.BIRD_DEV_URL // set by `npm run electron:dev`
 const isDev = Boolean(DEV_URL)
@@ -165,6 +166,41 @@ function logStorageDiag(id, wc, phase) {
     .catch(() => {})
 }
 
+// TEMPORARY diagnostics (dev only): the shape (not the text) of Instagram's inbox
+// list, to learn how to read it. Text is replaced by its length.
+function logInstagramDiag(id, wc) {
+  if (!isDev || id !== 'instagram' || wc.isDestroyed()) return
+  const file = path.join(__dirname, '..', 'logs', 'instagram-diag.log')
+  wc.executeJavaScript(`(() => {
+    const walk = (n) => {
+      if (n.nodeType === 3) { const t = n.textContent.trim(); return t ? '[' + t.length + 'ch]' : '' }
+      if (n.nodeType !== 1) return ''
+      const tag = n.tagName.toLowerCase()
+      const attrs = [...n.attributes].map((a) => a.name === 'class' ? 'class="' + a.value.slice(0, 40) + '"'
+        : a.name === 'href' ? 'href="' + a.value.replace(/[0-9]{5,}/g, '..') + '"'
+        : a.name === 'role' || a.name === 'aria-label' || a.name === 'dir' ? a.name + '=' + (a.name === 'aria-label' ? '(' + a.value.length + ')' : a.value) : a.name).join(' ')
+      return '<' + tag + ' ' + attrs + '>' + [...n.childNodes].map(walk).join('') + '</' + tag + '>'
+    }
+    const roles = {}
+    for (const el of document.querySelectorAll('[role]')) roles[el.getAttribute('role')] = (roles[el.getAttribute('role')] || 0) + 1
+    const hrefs = [...document.querySelectorAll('a[href]')].map((a) => a.getAttribute('href').replace(/[0-9]{5,}/g, '..').slice(0, 40)).slice(0, 40)
+    const rows = [...document.querySelectorAll('[role="button"]')]
+      .filter((el) => el.innerText && el.innerText.split('\\n').filter(Boolean).length >= 3 && !el.closest('li'))
+    const outline = (el) => { const d = []; let n = el; for (let i = 0; i < 7 && n; i++, n = n.parentElement) d.push(n.tagName.toLowerCase() + (n.getAttribute('role') ? '[' + n.getAttribute('role') + ']' : '')); return d.join('<') }
+    const leaves = (el) => {
+      const out = []
+      const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+      for (let n = w.nextNode(); n; n = w.nextNode()) {
+        const t = n.textContent.trim(); if (!t) continue
+        out.push(t.length + ':w' + getComputedStyle(n.parentElement).fontWeight + ':' + n.parentElement.tagName.toLowerCase())
+      }
+      return out
+    }
+    return JSON.stringify({ path: location.pathname, rows: rows.length, parents: rows.slice(0, 2).map(outline),
+      leaves: rows.slice(0, 6).map(leaves), first: rows[0] ? walk(rows[0]).slice(0, 4500) : null })  })()`)
+    .then((out) => fs.appendFileSync(file, '[' + new Date().toISOString() + '] ' + out + '\n'))
+    .catch((e) => fs.appendFileSync(file, 'error ' + e.message + '\n'))
+}
 function createNetworkView(id) {
   const net = NETWORKS[id]
   const ses = session.fromPartition(`persist:u-${currentUserId}-${id}`)
@@ -205,7 +241,7 @@ function createNetworkView(id) {
     }
   })
 
-  const entry = { view, count: 0, dot: false, cssKey: null, grayKey: null }
+  const entry = { view, count: 0, dot: false, cssKey: null, grayKey: null, pollTimer: null, readerView: null }
   views.set(id, entry)
 
   // Single-page apps change address without a page load; enforce the same rules.
@@ -240,9 +276,53 @@ function createNetworkView(id) {
 
   // Best effort click-to-focus: when a page asks for focus while hidden
   // (for example after a native web notification is clicked), surface it.
+  // Ignore the first seconds: a page loading in the background may grab focus itself.
+  const createdAt = Date.now()
   wc.on('focus', () => {
-    if (activeId !== id) focusNetwork(id)
+    if (activeId !== id && Date.now() - createdAt > 10_000) focusNetwork(id)
   })
+
+  // Apps whose page lists recent conversations: read that list now and then.
+  const reader = readerFor(id)
+  if (reader) {
+    // Some apps list conversations on a page other than the one you're on (e.g. the
+    // inbox, while you start on the feed): read that from a hidden second page.
+    let target = wc
+    if (reader.url) {
+      const rv = new WebContentsView({
+        webPreferences: { session: ses, contextIsolation: true, nodeIntegration: false, sandbox: true },
+      })
+      const rwc = rv.webContents
+      rwc.setUserAgent(browserUserAgent())
+      rwc.setAudioMuted(true)
+      rwc.setWindowOpenHandler(() => ({ action: 'deny' }))
+      rwc.on('will-navigate', (event, url) => {
+        if (!isAllowedUrl(id, url)) event.preventDefault()
+      })
+      entry.readerView = rv
+      target = rwc
+      setTimeout(() => {
+        if (views.get(id) === entry && !rwc.isDestroyed()) rwc.loadURL(reader.url)
+      }, 4_000)
+      rwc.once('did-finish-load', () => setTimeout(() => logInstagramDiag(id, rwc), 40_000)) // TEMPORARY
+    }
+    const poll = () => {
+      if (views.get(id) !== entry || target.isDestroyed() || target.isLoading()) return
+      target.executeJavaScript(reader.script)
+        .then((json) => {
+          if (views.get(id) !== entry) return
+          const next = normalize(id, json)
+          const same = JSON.stringify(next) === JSON.stringify(pageChats.get(id) ?? [])
+          if (same) return
+          if (next.length) pageChats.set(id, next)
+          else pageChats.delete(id)
+          sendInbox()
+        })
+        .catch(() => {})
+    }
+    entry.pollTimer = setInterval(poll, 15_000)
+    target.on('did-finish-load', () => setTimeout(poll, 6_000))
+  }
 
   view.setVisible(false)
   applyBounds(view)
@@ -335,8 +415,20 @@ let inboxSaveTimer = null
 
 const onScreen = (id) => id === activeId && win && !win.isDestroyed() && win.isFocused()
 
+// Conversations read from apps' own pages (see pagechats.cjs), by app. For an app
+// with page conversations those replace its notification entries, as they're fuller.
+const pageChats = new Map()
+
+function inboxList() {
+  if (!currentUserId || !inbox) return []
+  const covered = new Set([...pageChats].filter(([, items]) => items.length).map(([app]) => app))
+  return [...inbox.list(currentUserId).filter((x) => !covered.has(x.app)), ...[...pageChats.values()].flat()].sort(
+    (a, b) => b.at - a.at,
+  )
+}
+
 function sendInbox() {
-  sendToUI('bird:inbox', currentUserId && inbox ? inbox.list(currentUserId) : [])
+  sendToUI('bird:inbox', inboxList())
 }
 
 function scheduleInboxSave() {
@@ -354,9 +446,59 @@ function recordNotification(id, report) {
   }
 }
 
+// Stop reading an app's conversation list (and close its hidden reader page).
+function disposeReader(entry) {
+  clearInterval(entry.pollTimer)
+  if (entry.readerView && !entry.readerView.webContents.isDestroyed()) entry.readerView.webContents.close()
+  entry.readerView = null
+}
+
+function closeView(id) {
+  const entry = views.get(id)
+  if (!entry) return
+  disposeReader(entry)
+  if (pageChats.delete(id)) sendInbox()
+  if (!entry.view.webContents.isDestroyed()) entry.view.webContents.session.flushStorageData()
+  if (win && !win.isDestroyed()) win.contentView.removeChildView(entry.view)
+  if (!entry.view.webContents.isDestroyed()) entry.view.webContents.close()
+  views.delete(id)
+}
+
+// Apps are loaded in the background (hidden) as soon as they are on the app bar,
+// so their notifications and unread counts arrive without opening them first.
+// Opened one at a time so startup isn't a pile-up.
+let backgroundApps = []
+let backgroundTimer = null
+
+function syncBackground() {
+  clearTimeout(backgroundTimer)
+  backgroundTimer = null
+  if (!currentUserId || !win || win.isDestroyed()) return
+  for (const id of [...views.keys()]) {
+    if (!backgroundApps.includes(id) && id !== activeId) closeView(id)
+  }
+  const openNext = () => {
+    backgroundTimer = null
+    if (!currentUserId || !win || win.isDestroyed()) return
+    const id = backgroundApps.find((a) => !views.has(a))
+    if (!id) {
+      sendToUI('bird:status', statusSnapshot())
+      return
+    }
+    createNetworkView(id)
+    backgroundTimer = setTimeout(openNext, 2_000)
+  }
+  backgroundTimer = setTimeout(openNext, 1_500)
+}
+
 function destroyViews() {
+  clearTimeout(backgroundTimer)
+  backgroundTimer = null
   flushAllStorage() // keep this account's logins for the next sign-in
-  for (const { view } of views.values()) {
+  pageChats.clear()
+  for (const entry of views.values()) {
+    const { view } = entry
+    disposeReader(entry)
     if (win && !win.isDestroyed()) win.contentView.removeChildView(view)
     if (!view.webContents.isDestroyed()) view.webContents.close()
   }
@@ -371,6 +513,7 @@ function destroyViews() {
 function setUser(id) {
   if (id === currentUserId) return
   destroyViews()
+  backgroundApps = []
   currentUserId = id
   trackUsage()
   sendInbox()
@@ -390,6 +533,10 @@ function showNetwork(id) {
       scheduleInboxSave()
     }
   }
+  // An app taken off the bar stops running in the background once you leave it.
+  for (const viewId of [...views.keys()]) {
+    if (viewId !== activeId && !backgroundApps.includes(viewId)) closeView(viewId)
+  }
   trackUsage()
 }
 
@@ -405,6 +552,7 @@ function focusNetwork(id) {
 // ---------------------------------------------------------------- window
 function createWindow() {
   win = new BrowserWindow({
+    icon: path.join(__dirname, '..', 'build', 'icon.png'),
     width: 1280,
     height: 820,
     minWidth: 900,
@@ -443,7 +591,9 @@ function createWindow() {
   })
   for (const event of ['focus', 'blur', 'show', 'hide', 'minimize', 'restore']) win.on(event, trackUsage)
   win.on('closed', () => {
-    for (const { view } of views.values()) {
+    for (const entry of views.values()) {
+      const { view } = entry
+      disposeReader(entry)
       if (!view.webContents.isDestroyed()) view.webContents.close()
     }
     views.clear()
@@ -456,6 +606,53 @@ function createWindow() {
 ipcMain.on('bird:set-user', (_event, id) => {
   // Bird user ids are Mongo ObjectIds; they end up in a partition name on disk.
   setUser(typeof id === 'string' && /^[a-f0-9]{24}$/.test(id) ? id : null)
+})
+
+// The apps on the user's app bar: keep them loaded (hidden) so notifications arrive.
+ipcMain.on('bird:set-background-apps', (_event, ids) => {
+  backgroundApps = Array.isArray(ids)
+    ? [...new Set(ids.filter((id) => typeof id === 'string' && NETWORKS[id]))].slice(0, 30)
+    : []
+  syncBackground()
+})
+
+// Unlink one app's account: sign it out and wipe what Bird stored for it (cookies,
+// local data, cache) in this Bird account's session for that app. Other apps and
+// other Bird accounts are untouched.
+ipcMain.handle('bird:unlink-app', async (_event, id) => {
+  if (!currentUserId || typeof id !== 'string' || !NETWORKS[id]) return false
+  const userId = currentUserId
+  const ses = session.fromPartition(`persist:u-${userId}-${id}`)
+  const wasActive = activeId === id
+  closeView(id)
+  try {
+    await ses.clearStorageData()
+    await ses.clearCache()
+  } catch (err) {
+    console.error('[unlink] could not clear', id, err)
+    return false
+  }
+  if (inbox?.removeApp(userId, id)) {
+    sendInbox()
+    scheduleInboxSave()
+  }
+  if (userId !== currentUserId) return true // signed out meanwhile
+  // Open it again fresh (on screen if you were in it, else in the background).
+  if (wasActive) showNetwork(id)
+  else if (backgroundApps.includes(id)) syncBackground()
+  sendToUI('bird:status', statusSnapshot())
+  return true
+})
+
+// Open one conversation inside its app (a path the app's reader produced).
+ipcMain.on('bird:open-app-chat', (_event, id, chatPath) => {
+  const reader = typeof id === 'string' ? readerFor(id) : null
+  if (!reader || typeof chatPath !== 'string' || !/^[\w/-]{1,200}$/.test(chatPath)) return
+  if (!chatPath.startsWith(reader.pathPrefix)) return
+  const entry = views.get(id)
+  if (!entry || entry.view.webContents.isDestroyed()) return
+  const url = new URL(chatPath, NETWORKS[id].url).toString()
+  if (isAllowedUrl(id, url) && entry.view.webContents.getURL() !== url) entry.view.webContents.loadURL(url)
 })
 
 ipcMain.on('bird:select-network', (_event, id) => {
@@ -481,7 +678,7 @@ ipcMain.on('bird:set-grayscale', (_event, map) => {
 })
 
 // Conversations seen through app notifications (see recordNotification).
-ipcMain.handle('bird:get-inbox', () => (currentUserId && inbox ? inbox.list(currentUserId) : []))
+ipcMain.handle('bird:get-inbox', () => inboxList())
 
 ipcMain.on('bird:inbox-read', (_event, key) => {
   if (typeof key === 'string' && currentUserId && inbox?.markRead(currentUserId, key)) {

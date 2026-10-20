@@ -18,7 +18,7 @@
     "db": "npm --prefix server run db",
     "server": "npm --prefix server run dev",
     "server:test": "npm --prefix server test",
-    "test": "node --test electron/usage.test.cjs electron/inbox.test.cjs"
+    "test": "node --test electron/usage.test.cjs electron/inbox.test.cjs electron/pagechats.test.cjs"
   },
   "dependencies": {
     "react": "^19.3.1",

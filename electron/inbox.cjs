@@ -91,13 +91,20 @@ function createInbox(file) {
     return items.length !== before
   }
 
+  // Forget everything seen from one app (when its account is unlinked).
+  function removeApp(userId, app) {
+    const before = items.length
+    items = items.filter((x) => !(x.u === userId && x.a === app))
+    return items.length !== before
+  }
+
   function clear(userId) {
     const before = items.length
     items = items.filter((x) => x.u !== userId)
     return items.length !== before
   }
 
-  return { load, save, add, list, markRead, markAppRead, remove, clear }
+  return { load, save, add, list, markRead, markAppRead, remove, removeApp, clear }
 }
 
 // Script run inside an app's page. It wraps the page's Notification calls so

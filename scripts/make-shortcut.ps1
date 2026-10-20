@@ -2,7 +2,7 @@
 # Usage (from the project folder):  powershell -ExecutionPolicy Bypass -File scripts\make-shortcut.ps1
 $root = Split-Path -Parent $PSScriptRoot
 $vbs = Join-Path $PSScriptRoot 'Bird.vbs'
-$icon = Join-Path $root 'node_modules\electron\dist\electron.exe'
+$icon = Join-Path $root 'build\icon.ico'
 $desktop = [Environment]::GetFolderPath('Desktop')
 
 $shell = New-Object -ComObject WScript.Shell

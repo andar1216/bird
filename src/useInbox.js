@@ -26,6 +26,7 @@ export function inboxToChat(item) {
   return {
     id: `${INBOX_PREFIX}${item.key}`,
     fromApp: true,
+    openPath: item.path, // a conversation read from the app's page
     network: item.app,
     name: item.name,
     colors: colorsFor(item.name),
@@ -34,7 +35,7 @@ export function inboxToChat(item) {
     time: formatTime(at),
     unread: item.unread,
     mention: false,
-    muted: false,
+    muted: item.muted === true,
     pinned: false,
     archived: false,
     lowPriority: false,

@@ -56,7 +56,8 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   const usageOpen = panel === 'usage'
   const gray = useGrayscale(user.id)
   const appStatus = useBirdStatus()
-  const { apps, extra: extraApps, add: addApp, remove: removeApp } = useApps(user.id)
+  const appList = useApps(user.id)
+  const { apps } = appList
 
   // Tell the desktop shell whose web sessions to use (so each Bird account keeps
   // its own app logins). Declared before the select effect so the shell knows
@@ -65,6 +66,12 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
     bird?.setUser(user.id)
     return () => bird?.setUser(null)
   }, [user.id])
+
+  // Keep the apps on the bar running in the background so their notifications
+  // (and unread counts) arrive even before you open them.
+  useEffect(() => {
+    bird?.setBackgroundApps?.(apps)
+  }, [apps, user.id])
 
   useEffect(() => {
     bird?.selectNetwork(appOpen && !menuOpen && !panel ? network : null)
@@ -182,7 +189,10 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   // Conversations the apps told us about through notifications, next to the
   // server's chats. Opening one opens its app.
   const appChats = useInbox()
-  const everyChat = useMemo(() => [...chats, ...appChats], [chats, appChats])
+  const everyChat = useMemo(
+    () => [...chats, ...appChats],
+    [chats, appChats],
+  )
 
   // Which apps All Chats includes (all of them down to none).
   const scope = useAllChatsScope(user.id)
@@ -194,6 +204,7 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
 
   const openFromApp = (chat) => {
     bird?.markInboxRead(chat.id.slice(INBOX_PREFIX.length))
+    if (chat.openPath) bird?.openAppChat?.(chat.network, chat.openPath)
     selectNetwork(chat.network)
   }
 
@@ -280,6 +291,21 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
       usageOpen={usageOpen}
       onOpenUsage={() => setPanel((p) => (p === 'usage' ? null : 'usage'))}
       onOpenMatrix={() => setPanel('matrix')}
+      onHome={() => selectNetwork('all')}
+      appBar={{
+        apps,
+        limit: appList.limit,
+        network,
+        status: appStatus,
+        onSelect: selectNetwork,
+        onMove: appList.move,
+        onShow: appList.show,
+        onHide: (id) => {
+          appList.hide(id)
+          if (network === id) selectNetwork('all')
+        },
+        onLimit: appList.setLimit,
+      }}
       onMenuOpenChange={setMenuOpen}
     />
     <div className={`shell ${mobileChatOpen ? 'show-chat' : ''}`}>
@@ -300,15 +326,6 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
         filter={filter}
         setFilter={setFilter}
         network={network}
-        setNetwork={selectNetwork}
-        appStatus={appStatus}
-        apps={apps}
-        extraApps={extraApps}
-        onAddApp={addApp}
-        onRemoveApp={(id) => {
-          removeApp(id)
-          if (network === id) selectNetwork('all')
-        }}
         query={query}
         setQuery={setQuery}
       />

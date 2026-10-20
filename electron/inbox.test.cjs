@@ -84,3 +84,14 @@ test('the page hook reports notifications and parseReport only trusts our marker
   assert.equal(parseReport(marker, `${marker}not json`), null)
   assert.equal(win.Notification.permission, 'granted')
 })
+
+test('removeApp forgets one app for one user only', () => {
+  const inbox = createInbox(tmpFile())
+  inbox.add('u1', 'discord', { title: 'Sam', body: 'hi' })
+  inbox.add('u1', 'slack', { title: 'Lee', body: 'yo' })
+  inbox.add('u2', 'discord', { title: 'Kai', body: 'hey' })
+  assert.equal(inbox.removeApp('u1', 'discord'), true)
+  assert.deepEqual(inbox.list('u1').map((x) => x.app), ['slack'])
+  assert.equal(inbox.list('u2').length, 1)
+  assert.equal(inbox.removeApp('u1', 'discord'), false)
+})

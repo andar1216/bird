@@ -1,8 +1,4 @@
 import Avatar from './Avatar'
-import AddAppMenu from './AddAppMenu'
-import NetworkIcon from './NetworkIcon'
-import { APPS } from '../data'
-import { useGray } from '../useGrayscale'
 import ScopeMenu from './ScopeMenu'
 import { ComposeIcon, MuteIcon, SearchIcon } from './Icons'
 
@@ -40,17 +36,10 @@ export default function Sidebar({
   filter,
   setFilter,
   network,
-  setNetwork,
-  appStatus,
-  apps,
-  extraApps,
-  onAddApp,
-  onRemoveApp,
   onClearAppChats,
   query,
   setQuery,
 }) {
-  const { isGray } = useGray()
   const pinned = allChats.filter((c) => c.pinned && !c.archived)
   const list = chats
 
@@ -71,36 +60,6 @@ export default function Sidebar({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-      </div>
-
-      <div className="networks" role="tablist" aria-label="Networks">
-        <button
-          className={`net-chip ${network === 'all' ? 'on' : ''}`}
-          onClick={() => setNetwork('all')}
-        >
-          All
-        </button>
-        {apps.map((id) => {
-          const state = appStatus?.[id]
-          return (
-            <button
-              key={id}
-              className={`net-chip icon-only ${network === id ? 'on' : ''}`}
-              onClick={() => setNetwork(id)}
-              title={`Open ${APPS[id].name}`}
-              aria-label={APPS[id].name}
-            >
-              <NetworkIcon network={id} size={30} />
-              {state?.count > 0 && (
-                <span className={`badge chip-badge ${isGray(id, 'icon') ? 'gray' : ''}`}>{state.count}</span>
-              )}
-              {state && !state.count && state.dot && (
-                <span className={`chip-dot ${isGray(id, 'icon') ? 'gray' : ''}`} />
-              )}
-            </button>
-          )
-        })}
-        <AddAppMenu extra={extraApps} onAdd={onAddApp} onRemove={onRemoveApp} />
       </div>
 
       <div className="filters">

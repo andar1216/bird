@@ -14,6 +14,13 @@ contextBridge.exposeInMainWorld('bird', {
   setUser: (id) => ipcRenderer.send('bird:set-user', id),
   // Show a network's web view (or pass null to hide all, e.g. Unified mode).
   selectNetwork: (id) => ipcRenderer.send('bird:select-network', id),
+  // The apps on the app bar; they load hidden in the background so their
+  // notifications and unread counts arrive without opening them first.
+  // Sign an app out and wipe its stored data for this Bird account.
+  // Open one conversation (a path from its app's list) inside that app.
+  openAppChat: (id, path) => ipcRenderer.send('bird:open-app-chat', id, path),
+  unlinkApp: (id) => ipcRenderer.invoke('bird:unlink-app', id),
+  setBackgroundApps: (ids) => ipcRenderer.send('bird:set-background-apps', ids),
   // Rectangle (CSS px, window-relative) where the web view should be drawn.
   setBounds: (rect) => ipcRenderer.send('bird:set-bounds', rect),
   // { [networkId]: { count, dot } } for networks that have been opened.

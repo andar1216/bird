@@ -5,7 +5,10 @@ export default function AuthGate({ session }) {
   return (
     <div className="shell gate-shell">
       <div className="gate">
-        <h1 className="gate-brand">Bird</h1>
+        <h1 className="gate-brand">
+          <img src="/bird.png" alt="" width="64" height="64" />
+          Bird
+        </h1>
 
         {session.status === 'loading' && <p className="gate-note">Loading…</p>}
 

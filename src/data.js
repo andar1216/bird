@@ -4,24 +4,28 @@ export const NETWORKS = {
   instagram: {
     id: 'instagram',
     name: 'Instagram',
+    blurb: 'Photos and DMs',
     color: '#e1306c',
     url: 'https://www.instagram.com/direct/inbox/',
   },
   snapchat: {
     id: 'snapchat',
     name: 'Snapchat',
+    blurb: 'Snaps and chats',
     color: '#fffc00',
     url: 'https://web.snapchat.com/',
   },
   messages: {
     id: 'messages',
     name: 'Google Messages',
+    blurb: 'Texts from your phone',
     color: '#1a73e8',
     url: 'https://messages.google.com/web',
   },
   discord: {
     id: 'discord',
     name: 'Discord',
+    blurb: 'Servers and DMs',
     color: '#5865f2',
     url: 'https://discord.com/app',
   },

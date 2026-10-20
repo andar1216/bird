@@ -5,7 +5,9 @@ import NetworkIcon from './NetworkIcon'
 import { APPS } from '../data'
 import { bird } from '../bird'
 
-// Main pane for an app: a small header (its settings icon opens a dropdown with\n// grayscale and any app tweaks), and below it the area where the desktop shell draws the official web
+// Main pane for an app: a small header (its settings icon opens a dropdown with
+// grayscale, any app tweaks and unlinking the account), and below it the area
+// where the desktop shell draws the official web
 // app. We report that area's position so the shell can place the web view.
 // In a browser we explain why the app isn't available.
 export default function AppsStage({ network }) {
@@ -14,6 +16,8 @@ export default function AppsStage({ network }) {
   const [prefs, setPrefs] = useState({})
   // The per-app settings dropdown; closed until you ask for it.
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // Unlinking an account: idle -> confirm -> busy -> done | error.
+  const [unlink, setUnlink] = useState('idle')
 
   useEffect(() => {
     const el = bodyRef.current
@@ -60,6 +64,15 @@ export default function AppsStage({ network }) {
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [settingsOpen])
+
+  const doUnlink = async () => {
+    setUnlink('busy')
+    try {
+      setUnlink((await bird.unlinkApp(network)) ? 'done' : 'error')
+    } catch {
+      setUnlink('error')
+    }
+  }
 
   const net = APPS[network]
   const toggleSettings = () => setSettingsOpen((o) => !o)
@@ -126,6 +139,36 @@ export default function AppsStage({ network }) {
                 <p className="customize-note">
                   These tweaks depend on how {net.name} is built and may stop working if it changes.
                 </p>
+              </div>
+            </>
+          )}
+
+          {bird?.unlinkApp && (
+            <>
+              <h4>Account</h4>
+              <div className="unlink">
+                {unlink === 'done' ? (
+                  <p className="unlink-note">{net.name} is unlinked. Sign in again below to link another account.</p>
+                ) : unlink === 'confirm' || unlink === 'busy' || unlink === 'error' ? (
+                  <>
+                    <p className="unlink-note">
+                      Sign out of {net.name} and remove its data from Bird on this device? Your {net.name} account itself isn’t affected.
+                    </p>
+                    {unlink === 'error' && <p className="auth-error" role="alert">Couldn’t unlink. Try again.</p>}
+                    <div className="unlink-actions">
+                      <button className="matrix-danger" onClick={doUnlink} disabled={unlink === 'busy'}>
+                        {unlink === 'busy' ? 'Unlinking…' : 'Unlink'}
+                      </button>
+                      <button className="app-menu-btn" onClick={() => setUnlink('idle')} disabled={unlink === 'busy'}>
+                        Cancel
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <button className="matrix-danger" onClick={() => setUnlink('confirm')}>
+                    Unlink {net.name} account
+                  </button>
+                )}
               </div>
             </>
           )}

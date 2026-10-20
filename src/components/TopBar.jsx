@@ -1,3 +1,5 @@
+import { useCallback, useEffect, useState } from 'react'
+import AppBar from './AppBar'
 import ProfileMenu from './ProfileMenu'
 
 export default function TopBar({
@@ -8,11 +10,30 @@ export default function TopBar({
   usageOpen,
   onOpenUsage,
   onOpenMatrix,
+  onHome,
+  appBar,
   onMenuOpenChange,
 }) {
+  // Several menus can open from here; the native web view steps aside while any is.
+  const [menus, setMenus] = useState({})
+  const track = useCallback(
+    (name, open) => setMenus((m) => (m[name] === open ? m : { ...m, [name]: open })),
+    [],
+  )
+  const onProfileOpen = useCallback((open) => track('profile', open), [track])
+  const onAppsOpen = useCallback((open) => track('apps', open), [track])
+  const anyOpen = Object.values(menus).some(Boolean)
+  useEffect(() => {
+    onMenuOpenChange?.(anyOpen)
+  }, [anyOpen, onMenuOpenChange])
+
   return (
     <header className="topbar">
-      <span className="topbar-brand">Bird</span>
+      <button className="topbar-brand" onClick={onHome} title="All chats">
+        <img src="/bird.png" alt="" width="30" height="30" />
+        Bird
+      </button>
+      <AppBar {...appBar} onOpenChange={onAppsOpen} />
       <div className="topbar-right">
         <button
           className={`topbar-btn ${usageOpen ? 'on' : ''}`}
@@ -36,7 +57,7 @@ export default function TopBar({
           onSignOut={onSignOut}
           theme={theme}
           toggleTheme={toggleTheme}
-          onOpenChange={onMenuOpenChange}
+          onOpenChange={onProfileOpen}
           onOpenMatrix={onOpenMatrix}
         />
       </div>
