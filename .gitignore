@@ -12,6 +12,9 @@ dist
 dist-electron
 dist-ssr
 
+# Launcher logs
+logs/
+
 # Server local data and secrets
 server/.data/
 server/.env

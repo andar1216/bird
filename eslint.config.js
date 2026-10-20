@@ -5,7 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'dist-electron', 'ferdium-app', 'element-web', 'server/.data']),
+  globalIgnores(['dist', 'dist-electron', 'ferdium-app', 'element-web', 'server/.data', 'logs']),
   {
     files: ['**/*.{js,jsx}'],
     ignores: ['electron/**', 'server/**'],
@@ -20,8 +20,8 @@ export default defineConfig([
     },
   },
   {
-    // API server: Node ESM
-    files: ['server/**/*.{js,mjs}'],
+    // API server and launcher scripts: Node ESM
+    files: ['server/**/*.{js,mjs}', 'scripts/**/*.mjs'],
     extends: [js.configs.recommended],
     languageOptions: { globals: globals.node, sourceType: 'module' },
   },
