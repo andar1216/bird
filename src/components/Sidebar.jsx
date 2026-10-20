@@ -1,4 +1,4 @@
-﻿import Avatar from './Avatar'
+import Avatar from './Avatar'
 import AddAppMenu from './AddAppMenu'
 import NetworkIcon from './NetworkIcon'
 import { APPS } from '../data'
@@ -15,8 +15,8 @@ const FILTERS = [
 function preview(chat) {
   const last = chat.lastMessage
   if (!last) return ''
-  if (last.type === 'voice') return 'ðŸŽ¤ Voice message'
-  if (last.type === 'image') return 'ðŸ“· Photo'
+  if (last.type === 'voice') return '🎤 Voice message'
+  if (last.type === 'image') return '📷 Photo'
   const who = last.from === 'me' ? 'You: ' : last.sender ? `${last.sender}: ` : ''
   return who + last.text
 }
@@ -130,7 +130,7 @@ export default function Sidebar({
       )}
 
       <ul className="chat-list">
-        {list.length === 0 && <li className="empty">Nothing here yet âœ¨</li>}
+        {list.length === 0 && <li className="empty">Nothing here yet ✨</li>}
         {list.map((c) => (
           <li key={c.id}>
             <button

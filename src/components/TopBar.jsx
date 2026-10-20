@@ -1,4 +1,4 @@
-﻿import ProfileMenu from './ProfileMenu'
+import ProfileMenu from './ProfileMenu'
 
 export default function TopBar({
   user,

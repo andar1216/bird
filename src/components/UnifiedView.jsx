@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Sidebar from './Sidebar'
 import ChatView from './ChatView'
 import AppsStage from './AppsStage'
@@ -177,10 +177,10 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   } else if (appOpen && network !== 'all') {
     pane = <AppsStage key={network} network={network} />
   } else if (load.status === 'loading') {
-    pane = <Message title="Loading your chatsâ€¦" />
+    pane = <Message title="Loading your chats…" />
   } else if (load.status === 'error') {
     pane = (
-      <Message title="Couldnâ€™t load your chats">
+      <Message title="Couldn’t load your chats">
         <p>{load.error}</p>
         <button
           className="auth-submit"
@@ -246,7 +246,7 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
       {pane}
       {notice && (
         <button className="toast" onClick={() => setNotice(null)} role="alert">
-          {notice} <span aria-hidden="true">Ã—</span>
+          {notice} <span aria-hidden="true">×</span>
         </button>
       )}
     </div>

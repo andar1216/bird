@@ -1,4 +1,4 @@
-﻿import { useGray } from '../useGrayscale'
+import { useGray } from '../useGrayscale'
 
 // Simple stylised network glyphs on brand-colored tiles (not official logos).
 const GLYPHS = {

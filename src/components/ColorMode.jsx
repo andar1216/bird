@@ -11,29 +11,12 @@ const ROWS = [
   { kind: 'screen', label: 'App screen', hint: 'The app’s page inside Bird' },
 ]
 
-// Header button that opens the grayscale panel for one app.
-export function ColorButton({ open, onToggle }) {
-  return (
-    <button
-      className={`app-bar-btn ${open ? 'on' : ''}`}
-      onClick={onToggle}
-      aria-expanded={open}
-    >
-      <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
-        <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.800" />
-        <path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" />
-      </svg>
-      Grayscale
-    </button>
-  )
-}
-
 // Per-app grayscale: the icon and the screen are separate. "Default" follows
 // the matching switch in the profile menu; Gray / Color override it for this app.
-export function ColorPanel({ network }) {
+export function ColorRows({ network }) {
   const { defaultOn, modeOf, setMode } = useGray()
   return (
-    <div className="customize-panel">
+    <div className="color-rows">
       {ROWS.map(({ kind, label, hint }) => (
         <div className="customize-row color-row" key={kind}>
           <span className="customize-text">

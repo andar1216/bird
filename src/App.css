@@ -1,4 +1,4 @@
-﻿/* ---------- Theme tokens ---------- */
+/* ---------- Theme tokens ---------- */
 .app {
   --accent: #2f6bff;
   --accent-soft: rgba(47, 107, 255, 0.12);
@@ -517,7 +517,47 @@
   background: var(--panel-solid);
   border-bottom: 1px solid var(--border);
 }
-.app-bar-name { flex: 1; font-weight: 700; font-size: 15.5px; }
+.app-bar-name { font-weight: 700; font-size: 15.5px; }
+.app-bar-fill { flex: 1; }
+/* The app's icon and name open its settings dropdown, like the gear next to them. */
+.app-bar-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px 5px 5px;
+  margin-left: -5px;
+  border-radius: 14px;
+  color: var(--text);
+}
+.app-bar-title:hover { background: var(--hover); }
+.app-bar-title .chevron { color: var(--text-dim); transition: transform 0.15s; }
+.app-bar-title .chevron.up { transform: rotate(180deg); }
+.app-bar-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  color: var(--text-dim);
+}
+.app-bar-icon:hover { color: var(--text); background: var(--hover); }
+.app-bar-icon.on { background: var(--accent-soft); color: var(--accent); }
+.settings-panel {
+  flex: none;
+  max-height: 55%;
+  overflow-y: auto;
+  padding: 4px 10px 12px;
+  background: var(--panel-solid);
+  border-bottom: 1px solid var(--border);
+}
+.settings-panel h4 {
+  margin: 10px 12px 2px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
 .app-bar-btn {
   display: flex;
   align-items: center;

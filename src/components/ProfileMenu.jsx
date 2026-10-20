@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MoonIcon, SunIcon } from './Icons'
 import { useGray } from '../useGrayscale'
 
