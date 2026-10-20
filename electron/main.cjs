@@ -1,8 +1,9 @@
 const fs = require('node:fs')
 const path = require('node:path')
-const { app, BrowserWindow, WebContentsView, ipcMain, session, shell } = require('electron')
+const { app, BrowserWindow, WebContentsView, ipcMain, powerMonitor, session, shell } = require('electron')
 const { NETWORKS, ALLOWED_PERMISSIONS, isAllowedUrl, parseBadge } = require('./networks.cjs')
 const custom = require('./customizations.cjs')
+const { createUsageTracker } = require('./usage.cjs')
 
 const DEV_URL = process.env.BIRD_DEV_URL // set by `npm run electron:dev`
 const isDev = Boolean(DEV_URL)
@@ -67,6 +68,18 @@ function browserUserAgent() {
   return session.defaultSession.getUserAgent().replace(strip, '')
 }
 
+// Write every open app's cookies and page storage to disk right now. Chromium
+// normally batches these writes, so a login made shortly before the app is
+// closed or force-killed could otherwise be lost (you'd be signed out again).
+function flushAllStorage() {
+  for (const { view } of views.values()) {
+    const wc = view.webContents
+    if (wc.isDestroyed()) continue
+    wc.session.cookies.flushStore().catch(() => {})
+    wc.session.flushStorageData()
+  }
+}
+
 function applyBounds(view) {
   view.setBounds({
     x: Math.round(bounds.x),
@@ -88,6 +101,67 @@ function lockDownSession(networkId, ses) {
   ses.setPermissionCheckHandler((wc, permission, requestingOrigin) =>
     permitted(wc, permission, requestingOrigin),
   )
+  keepSessionCookies(ses)
+}
+
+// Cookies without an expiry are "session cookies": Chromium throws them away
+// whenever the app closes, which signs you out of any site that keeps its login
+// in one. Give them a 90-day expiry so they survive restarts, like "remember me".
+const SESSION_COOKIE_TTL_S = 90 * 24 * 60 * 60
+const keptSessions = new WeakSet()
+
+function keepSessionCookies(ses) {
+  if (keptSessions.has(ses)) return
+  keptSessions.add(ses)
+  ses.cookies.on('changed', (_event, cookie, _cause, removed) => {
+    if (removed || !cookie.session) return
+    const host = cookie.domain.replace(/^\./, '')
+    ses.cookies
+      .set({
+        url: `${cookie.secure ? 'https' : 'http'}://${host}${cookie.path}`,
+        name: cookie.name,
+        value: cookie.value,
+        ...(cookie.hostOnly ? {} : { domain: cookie.domain }),
+        path: cookie.path,
+        secure: cookie.secure,
+        httpOnly: cookie.httpOnly,
+        sameSite: cookie.sameSite,
+        expirationDate: Math.floor(Date.now() / 1000) + SESSION_COOKIE_TTL_S,
+      })
+      .catch(() => {})
+  })
+}
+
+// TEMPORARY diagnostics (dev only) for "Discord signs me out after restart".
+// Writes names only, never values, to logs/storage-diag.log.
+function logStorageDiag(id, wc, phase) {
+  if (!isDev || id !== 'discord' || wc.isDestroyed()) return
+  const file = path.join(__dirname, '..', 'logs', 'storage-diag.log')
+  const now = Date.now() / 1000
+  wc.session.cookies
+    .get({})
+    .then(async (cookies) => {
+      let keys
+      try {
+        keys = await wc.executeJavaScript(
+          `(() => { try { const f = document.createElement('iframe'); f.style.display = 'none';
+            document.body.appendChild(f); const k = Object.keys(f.contentWindow.localStorage); f.remove(); return k }
+            catch (e) { return ['error:' + e.message] } })()`,
+        )
+      } catch (e) {
+        keys = ['error:' + e.message]
+      }
+      const lines = [
+        `[${new Date().toISOString()}] ${phase} url=${wc.getURL().split('?')[0]}`,
+        `  cookies(${cookies.length}): ` +
+          cookies
+            .map((c) => `${c.name}${c.session ? '(session)' : `(${Math.round((c.expirationDate - now) / 86400)}d)`}`)
+            .join(', '),
+        `  localStorage keys(${keys.length}): ${keys.join(', ')}`,
+      ]
+      fs.appendFileSync(file, lines.join('\n') + '\n')
+    })
+    .catch(() => {})
 }
 
 function createNetworkView(id) {
@@ -130,7 +204,7 @@ function createNetworkView(id) {
     }
   })
 
-  const entry = { view, count: 0, dot: false, cssKey: null }
+  const entry = { view, count: 0, dot: false, cssKey: null, grayKey: null }
   views.set(id, entry)
 
   // Single-page apps change address without a page load; enforce the same rules.
@@ -138,7 +212,14 @@ function createNetworkView(id) {
     if (isMainFrame) enforceRules(id)
   })
   // Inserted CSS belongs to one document, so apply it to every new page.
-  wc.on('dom-ready', () => applyCss(id))
+  wc.on('dom-ready', () => {
+    applyCss(id)
+    applyGrayscale(id)
+  })
+  wc.once('did-finish-load', () => {
+    setTimeout(() => logStorageDiag(id, wc, 'start+10s'), 10_000)
+    setTimeout(() => logStorageDiag(id, wc, 'start+90s'), 90_000)
+  })
 
   // Unread state comes from the page title only (no DOM access).
   wc.on('page-title-updated', (_event, title) => {
@@ -184,6 +265,31 @@ function applyCss(id) {
   }
 }
 
+// Grayscale: the UI works out (default + per-app choice) which apps should be
+// black and white and sends { [appId]: boolean }. Kept apart from the customize
+// CSS so the two don't interfere.
+let grayscaleApps = {}
+const isGray = (id) => grayscaleApps[id] === true
+const GRAYSCALE_CSS = 'html { filter: grayscale(1) !important; }'
+
+function applyGrayscale(id) {
+  const entry = views.get(id)
+  if (!entry || entry.view.webContents.isDestroyed()) return
+  const wc = entry.view.webContents
+  if (entry.grayKey) {
+    wc.removeInsertedCSS(entry.grayKey).catch(() => {})
+    entry.grayKey = null
+  }
+  if (!isGray(id)) return
+  wc
+    .insertCSS(GRAYSCALE_CSS)
+    .then((key) => {
+      if (isGray(id) && !entry.grayKey) entry.grayKey = key
+      else wc.removeInsertedCSS(key).catch(() => {}) // switched off (or doubled) meanwhile
+    })
+    .catch(() => {})
+}
+
 // If the page the user is on now is one they've switched off, leave it.
 function enforceRules(id) {
   const entry = views.get(id)
@@ -200,7 +306,21 @@ function enforceRules(id) {
   if (to) wc.loadURL(to)
 }
 
+// ------------------------------------------------------------ screen time
+const IDLE_AFTER_S = 5 * 60
+let usage = null // created once the app is ready (needs the user data folder)
+
+// An app counts as "open" while it is the one on screen, Bird is in front, and
+// you haven't been away from the keyboard for a few minutes.
+function trackUsage() {
+  if (!usage) return
+  const inFront = win && !win.isDestroyed() && win.isVisible() && !win.isMinimized() && win.isFocused()
+  const idle = powerMonitor.getSystemIdleTime() >= IDLE_AFTER_S
+  usage.set(inFront && !idle && currentUserId && activeId ? { u: currentUserId, a: activeId } : null)
+}
+
 function destroyViews() {
+  flushAllStorage() // keep this account's logins for the next sign-in
   for (const { view } of views.values()) {
     if (win && !win.isDestroyed()) win.contentView.removeChildView(view)
     if (!view.webContents.isDestroyed()) view.webContents.close()
@@ -217,6 +337,7 @@ function setUser(id) {
   if (id === currentUserId) return
   destroyViews()
   currentUserId = id
+  trackUsage()
 }
 
 function showNetwork(id) {
@@ -228,6 +349,7 @@ function showNetwork(id) {
     applyBounds(entry.view)
     entry.view.setVisible(true)
   }
+  trackUsage()
 }
 
 function focusNetwork(id) {
@@ -273,6 +395,12 @@ function createWindow() {
   if (isDev) win.loadURL(DEV_URL)
   else win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
 
+  win.on('close', () => {
+    flushAllStorage()
+    usage?.set(null)
+    usage?.save()
+  })
+  for (const event of ['focus', 'blur', 'show', 'hide', 'minimize', 'restore']) win.on(event, trackUsage)
   win.on('closed', () => {
     for (const { view } of views.values()) {
       if (!view.webContents.isDestroyed()) view.webContents.close()
@@ -302,6 +430,21 @@ ipcMain.on('bird:set-bounds', (_event, rect) => {
 
 ipcMain.handle('bird:get-status', () => statusSnapshot())
 
+ipcMain.on('bird:set-grayscale', (_event, map) => {
+  if (!map || typeof map !== 'object') return
+  const next = {}
+  for (const id of Object.keys(NETWORKS)) next[id] = map[id] === true
+  const before = grayscaleApps
+  grayscaleApps = next
+  for (const id of views.keys()) if (before[id] !== next[id]) applyGrayscale(id)
+})
+
+// Screen time for the signed-in account: visits that ended after `since` (ms).
+ipcMain.handle('bird:get-usage', (_event, since) => {
+  if (!usage || !currentUserId) return { now: Date.now(), segments: [], active: null }
+  return usage.query(currentUserId, Number.isFinite(since) ? since : 0)
+})
+
 // Customize panel: what can be tweaked, what is on for this account, and changes.
 ipcMain.handle('bird:get-customizations', () => custom.describeAll())
 
@@ -322,6 +465,22 @@ ipcMain.on('bird:set-app-pref', (_event, networkId, optionId, value) => {
   enforceRules(networkId)
 })
 
+// The dev launcher (scripts/launch.mjs) asks for a clean quit by creating this
+// file, so logins are saved to disk instead of the app being force-killed.
+const QUIT_FILE = process.env.BIRD_QUIT_FILE
+function watchForQuitRequest() {
+  if (!QUIT_FILE) return
+  setInterval(() => {
+    if (!fs.existsSync(QUIT_FILE)) return
+    try {
+      fs.unlinkSync(QUIT_FILE)
+    } catch {
+      /* already gone */
+    }
+    app.quit()
+  }, 400).unref()
+}
+
 // -------------------------------------------------------------- lifecycle
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -334,7 +493,22 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     loadPrefs()
+    usage = createUsageTracker(path.join(app.getPath('userData'), 'usage.json'))
+    usage.load()
     createWindow()
+    // Save logins and screen time often (not just on quit) so even a crash or
+    // force-kill keeps them. The tick also notices when you go idle.
+    setInterval(() => {
+      flushAllStorage()
+      trackUsage()
+      usage.save()
+    }, 15_000).unref()
+    app.on('before-quit', () => {
+      flushAllStorage()
+      usage.set(null)
+      usage.save()
+    })
+    watchForQuitRequest()
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })

@@ -10,7 +10,7 @@
 //
 // Logs: logs/launcher.log, logs/mongod.log, logs/server.log, logs/vite.log, logs/electron.log
 import { spawn, spawnSync } from 'node:child_process'
-import { createWriteStream, mkdirSync, watch } from 'node:fs'
+import { createWriteStream, mkdirSync, rmSync, watch, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import net from 'node:net'
 import { dirname, join, resolve } from 'node:path'
@@ -22,6 +22,7 @@ const serverDir = join(root, 'server')
 const logDir = join(root, 'logs')
 mkdirSync(logDir, { recursive: true })
 
+const QUIT_FILE = join(logDir, 'electron.quit')
 const PORT = { db: 27017, api: 4000, web: 5173 }
 const WEB_URL = `http://localhost:${PORT.web}`
 
@@ -102,10 +103,11 @@ let restarting = false
 let shuttingDown = false
 
 function launchElectron() {
+  rmSync(QUIT_FILE, { force: true }) // forget any stale quit request
   const out = createWriteStream(join(logDir, 'electron.log'), { flags: 'a' })
   electron = spawn(electronPath, ['.'], {
     cwd: root,
-    env: { ...process.env, BIRD_DEV_URL: WEB_URL },
+    env: { ...process.env, BIRD_DEV_URL: WEB_URL, BIRD_QUIT_FILE: QUIT_FILE },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   electron.stdout.pipe(out, { end: false })
@@ -126,6 +128,21 @@ function launchElectron() {
   log('started electron')
 }
 
+// Close the app politely first (like clicking its X) so Chromium saves cookies
+// and storage, i.e. your logins in each app. Force it only if it doesn't exit.
+async function stopElectron() {
+  const proc = electron
+  if (!proc?.pid || proc.exitCode !== null) return
+  // The app quits itself when this file appears (see electron/main.cjs).
+  try {
+    writeFileSync(QUIT_FILE, '')
+  } catch {
+    /* can't signal: fall through to the forced stop */
+  }
+  for (let i = 0; i < 20 && proc.exitCode === null; i++) await sleep(250)
+  if (proc.exitCode === null) killTree(proc)
+}
+
 // Restart the app when its main-process files change (renderer hot-reloads itself).
 function watchElectronFiles() {
   let timer
@@ -136,7 +153,7 @@ function watchElectronFiles() {
       if (shuttingDown || !electron || electron.exitCode !== null) return
       log(`electron/${file} changed, restarting the app`)
       restarting = true
-      killTree(electron)
+      stopElectron()
     }, 300)
   })
 }
@@ -146,7 +163,7 @@ async function shutdown() {
   if (shuttingDown) return
   shuttingDown = true
   log('shutting down')
-  killTree(electron)
+  await stopElectron()
   for (const entry of [...started].reverse()) {
     if (entry.name === 'mongod') await stopMongo(entry)
     else killTree(entry.proc)

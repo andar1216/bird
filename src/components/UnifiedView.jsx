@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useState } from 'react'
 import Sidebar from './Sidebar'
 import ChatView from './ChatView'
 import AppsStage from './AppsStage'
 import TopBar from './TopBar'
+import UsagePanel from './UsagePanel'
 import { api } from '../api'
 import { bird } from '../bird'
 import { useApps } from '../useApps'
 import { useBirdStatus } from '../useBirdStatus'
+import { GrayscaleContext, useGrayscale } from '../useGrayscale'
 import { mergeChat, toUiChat, toUiMessage } from '../chatModel'
 import { NETWORK_ORDER } from '../data'
 
@@ -46,6 +48,9 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   const [appOpen, setAppOpen] = useState(false)
   // The profile menu is open: the native web view must step aside so it shows.
   const [menuOpen, setMenuOpen] = useState(false)
+  // The screen-time page fills the main pane (the web view steps aside too).
+  const [usageOpen, setUsageOpen] = useState(false)
+  const gray = useGrayscale(user.id)
   const appStatus = useBirdStatus()
   const { apps, extra: extraApps, add: addApp, remove: removeApp } = useApps(user.id)
 
@@ -58,8 +63,8 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   }, [user.id])
 
   useEffect(() => {
-    bird?.selectNetwork(appOpen && !menuOpen ? network : null)
-  }, [appOpen, menuOpen, network, user.id])
+    bird?.selectNetwork(appOpen && !menuOpen && !usageOpen ? network : null)
+  }, [appOpen, menuOpen, usageOpen, network, user.id])
 
   // The shell can ask us to show an app (e.g. a notification was clicked).
   useEffect(
@@ -67,6 +72,7 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
       bird?.onActiveNetwork((id) => {
         setNetwork(id)
         setAppOpen(true)
+        setUsageOpen(false)
       }),
     [],
   )
@@ -75,6 +81,7 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   const selectNetwork = (id) => {
     setNetwork(id)
     setAppOpen(id !== 'all')
+    setUsageOpen(false)
   }
 
   // A rejected token means the session is gone: go back to the sign-in screen.
@@ -165,13 +172,15 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   const active = chats.find((c) => c.id === activeId)
 
   let pane
-  if (appOpen && network !== 'all') {
+  if (usageOpen) {
+    pane = <UsagePanel onClose={() => setUsageOpen(false)} />
+  } else if (appOpen && network !== 'all') {
     pane = <AppsStage key={network} network={network} />
   } else if (load.status === 'loading') {
-    pane = <Message title="Loading your chats…" />
+    pane = <Message title="Loading your chatsâ€¦" />
   } else if (load.status === 'error') {
     pane = (
-      <Message title="Couldn’t load your chats">
+      <Message title="Couldnâ€™t load your chats">
         <p>{load.error}</p>
         <button
           className="auth-submit"
@@ -198,12 +207,15 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   }
 
   return (
+    <GrayscaleContext.Provider value={gray}>
     <div className="frame">
     <TopBar
       user={user}
       onSignOut={onSignOut}
       theme={theme}
       toggleTheme={toggleTheme}
+      usageOpen={usageOpen}
+      onOpenUsage={() => setUsageOpen((open) => !open)}
       onMenuOpenChange={setMenuOpen}
     />
     <div className={`shell ${mobileChatOpen ? 'show-chat' : ''}`}>
@@ -213,6 +225,7 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
         activeId={activeId}
         onSelect={(id) => {
           setAppOpen(false)
+          setUsageOpen(false)
           openChat(id)
         }}
         filter={filter}
@@ -233,10 +246,11 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
       {pane}
       {notice && (
         <button className="toast" onClick={() => setNotice(null)} role="alert">
-          {notice} <span aria-hidden="true">×</span>
+          {notice} <span aria-hidden="true">Ã—</span>
         </button>
       )}
     </div>
     </div>
+    </GrayscaleContext.Provider>
   )
 }

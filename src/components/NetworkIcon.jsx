@@ -1,3 +1,5 @@
+﻿import { useGray } from '../useGrayscale'
+
 // Simple stylised network glyphs on brand-colored tiles (not official logos).
 const GLYPHS = {
   instagram: (
@@ -123,9 +125,10 @@ const BG = {
 }
 
 export default function NetworkIcon({ network, size = 16, className = '' }) {
+  const { isGray } = useGray()
   return (
     <span
-      className={`net-icon ${className}`}
+      className={`net-icon ${isGray(network, 'icon') ? 'gray' : ''} ${className}`}
       style={{ width: size, height: size, background: BG[network] }}
       title={network}
     >

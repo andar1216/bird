@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
+import AppTimer from './AppTimer'
+import { ColorButton, ColorPanel } from './ColorMode'
 import NetworkIcon from './NetworkIcon'
 import { APPS } from '../data'
 import { bird } from '../bird'
@@ -12,6 +14,7 @@ export default function AppsStage({ network }) {
   const [options, setOptions] = useState([])
   const [prefs, setPrefs] = useState({})
   const [panelOpen, setPanelOpen] = useState(false)
+  const [colorOpen, setColorOpen] = useState(false)
 
   useEffect(() => {
     const el = bodyRef.current
@@ -57,6 +60,8 @@ export default function AppsStage({ network }) {
       <div className="app-bar">
         <NetworkIcon network={network} size={26} />
         <span className="app-bar-name">{net.name}</span>
+        <AppTimer network={network} />
+        <ColorButton open={colorOpen} onToggle={() => setColorOpen((o) => !o)} />
         {options.length > 0 && (
           <button
             className={`app-bar-btn ${panelOpen ? 'on' : ''}`}
@@ -76,6 +81,8 @@ export default function AppsStage({ network }) {
           </button>
         )}
       </div>
+
+      {colorOpen && <ColorPanel network={network} />}
 
       {panelOpen && (
         <div className="customize-panel">

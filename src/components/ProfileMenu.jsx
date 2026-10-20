@@ -1,13 +1,27 @@
-import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import { MoonIcon, SunIcon } from './Icons'
+import { useGray } from '../useGrayscale'
+
+// Defaults for every app; each app can override them (see its Grayscale panel).
+const GRAY_ROWS = [
+  { kind: 'icon', label: 'Grayscale icons' },
+  { kind: 'screen', label: 'Grayscale app screens' },
+]
 
 function initialOf(user) {
   return (user.displayName || user.username).trim()[0]?.toUpperCase() ?? '?'
 }
 
 // Profile avatar (top right) and the settings dropdown it opens.
-export default function ProfileMenu({ user, onSignOut, theme, toggleTheme, onOpenChange }) {
+export default function ProfileMenu({
+  user,
+  onSignOut,
+  theme,
+  toggleTheme,
+  onOpenChange,
+}) {
   const [open, setOpen] = useState(false)
+  const { defaultOn, toggleDefault } = useGray()
   const ref = useRef(null)
   const dark = theme === 'dark'
 
@@ -70,6 +84,22 @@ export default function ProfileMenu({ user, onSignOut, theme, toggleTheme, onOpe
             <span className={`switch ${dark ? 'on' : ''}`} aria-hidden="true" />
           </button>
 
+          {GRAY_ROWS.map(({ kind, label }) => (
+            <button
+              key={kind}
+              className="menu-item"
+              role="menuitemcheckbox"
+              aria-checked={defaultOn(kind)}
+              onClick={() => toggleDefault(kind)}
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.800" />
+                <path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" />
+              </svg>
+              <span className="menu-label">{label}</span>
+              <span className={`switch ${defaultOn(kind) ? 'on' : ''}`} aria-hidden="true" />
+            </button>
+          ))}
           <div className="menu-sep" />
 
           <button

@@ -24,6 +24,11 @@ contextBridge.exposeInMainWorld('bird', {
   getAppPrefs: (networkId) => ipcRenderer.invoke('bird:get-app-prefs', networkId),
   setAppPref: (networkId, optionId, value) =>
     ipcRenderer.send('bird:set-app-pref', networkId, optionId, value),
+  // Which apps' pages are drawn in black and white: { [appId]: boolean }.
+  setGrayscale: (map) => ipcRenderer.send('bird:set-grayscale', map),
+  // Screen time: this account's visits since `since` (ms) as
+  // { now, segments: [{ app, start, end, live }], active: { app, start } | null }.
+  getUsage: (since) => ipcRenderer.invoke('bird:get-usage', since),
   onStatus: (cb) => subscribe('bird:status', cb),
   // Main asks the UI to switch network (e.g. a notification was clicked).
   onActiveNetwork: (cb) => subscribe('bird:active-network', cb),

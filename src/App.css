@@ -1,4 +1,4 @@
-/* ---------- Theme tokens ---------- */
+﻿/* ---------- Theme tokens ---------- */
 .app {
   --accent: #2f6bff;
   --accent-soft: rgba(47, 107, 255, 0.12);
@@ -744,3 +744,121 @@
   .thread { padding: 14px 16px; }
   .msg { max-width: 82%; }
 }
+
+/* ---------- Grayscale (per app; the shell greys the web pages) ---------- */
+.net-icon.gray,
+.chip-badge.gray,
+.chip-dot.gray { filter: grayscale(1); }
+.topbar-right { display: flex; align-items: center; gap: 12px; }
+.topbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 18px;
+  background: var(--pill);
+  color: var(--text-dim);
+  font-size: 13.5px;
+  font-weight: 650;
+}
+.topbar-btn:hover { color: var(--text); }
+.topbar-btn.on { background: var(--accent-soft); color: var(--accent); }
+.color-row { cursor: default; }
+.color-row:hover { background: none; }
+.color-mode {
+  flex: none;
+  display: flex;
+  padding: 2px;
+  border-radius: 14px;
+  background: var(--pill);
+}
+.color-mode button {
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 12px;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--text-dim);
+}
+.color-mode button:hover { color: var(--text); }
+.color-mode button.on { background: var(--panel-solid); color: var(--text); box-shadow: 0 0 0 1px var(--border); }
+
+/* ---------- Screen time ---------- */
+.app-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+.app-timer.running { color: var(--text); }
+.app-timer i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2fbf71;
+  animation: usage-pulse 1.6s ease-in-out infinite;
+}
+@keyframes usage-pulse { 50% { opacity: 0.3; } }
+.usage-pane { min-height: 0; }
+.usage-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.usage-card {
+  flex: none;
+  padding: 16px 18px 18px;
+  border-radius: 18px;
+  background: var(--panel-solid);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.usage-card h3 { margin: 0 0 10px; font-size: 14px; color: var(--text-dim); font-weight: 650; }
+.usage-total { font-size: 34px; font-weight: 750; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.usage-note, .usage-empty { margin: 4px 0 0; font-size: 12.5px; color: var(--text-dim); }
+.usage-empty { padding: 6px 0; }
+.usage-apps, .usage-visits, .usage-legend { list-style: none; margin: 14px 0 0; padding: 0; }
+.usage-apps li, .usage-visits li { display: flex; align-items: center; gap: 12px; padding: 6px 0; }
+.usage-app-name, .usage-visit-name { flex: 0 0 150px; font-weight: 650; font-size: 14px; min-width: 0; }
+.usage-live { margin-left: 8px; font-size: 11.5px; font-weight: 600; color: #2fbf71; }
+.usage-bar { flex: 1; height: 8px; border-radius: 4px; background: var(--pill); overflow: hidden; }
+.usage-bar i { display: block; height: 100%; border-radius: 4px; }
+.usage-time { flex: none; min-width: 74px; text-align: right; font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.usage-visits { margin-top: 4px; }
+.usage-visit-name { flex: 1; }
+.usage-visit-when { flex: none; font-size: 13px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
+.usage-days { display: flex; align-items: stretch; gap: 10px; height: 190px; }
+.usage-day { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.usage-day-total { height: 15px; font-size: 11.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.usage-day-col { flex: 1; width: 100%; max-width: 54px; display: flex; align-items: flex-end; border-radius: 8px; background: var(--pill); overflow: hidden; }
+.usage-day-stack { width: 100%; display: flex; flex-direction: column-reverse; min-height: 0; }
+.usage-day-stack i { display: block; width: 100%; }
+.usage-day-label { font-size: 12px; color: var(--text-dim); }
+.usage-day.today .usage-day-label { color: var(--text); font-weight: 700; }
+.usage-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; font-size: 12.5px; color: var(--text-dim); }
+.usage-legend li { display: flex; align-items: center; gap: 6px; }
+.usage-legend i { width: 9px; height: 9px; border-radius: 3px; }
+
+.usage-timeline { display: flex; flex-direction: column; gap: 8px; }
+.usage-track-row { display: flex; align-items: center; gap: 12px; }
+.usage-track {
+  position: relative;
+  flex: 1;
+  height: 24px;
+  border-radius: 8px;
+  background: var(--pill);
+  overflow: hidden;
+}
+.usage-track u { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border); }
+.usage-track i { position: absolute; top: 4px; bottom: 4px; min-width: 4px; border-radius: 4px; }
+.usage-axis-spacer { flex: none; width: 22px; }
+.usage-axis { position: relative; flex: 1; height: 16px; }
+.usage-axis span { position: absolute; transform: translateX(-50%); font-size: 11.5px; color: var(--text-dim); white-space: nowrap; }

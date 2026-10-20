@@ -17,7 +17,8 @@
     "launcher:shortcut": "powershell -ExecutionPolicy Bypass -File scripts/make-shortcut.ps1",
     "db": "npm --prefix server run db",
     "server": "npm --prefix server run dev",
-    "server:test": "npm --prefix server test"
+    "server:test": "npm --prefix server test",
+    "test": "node --test electron/usage.test.cjs"
   },
   "dependencies": {
     "react": "^19.3.1",

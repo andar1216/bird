@@ -1,7 +1,8 @@
-import Avatar from './Avatar'
+﻿import Avatar from './Avatar'
 import AddAppMenu from './AddAppMenu'
 import NetworkIcon from './NetworkIcon'
 import { APPS } from '../data'
+import { useGray } from '../useGrayscale'
 import { ComposeIcon, LayersIcon, MuteIcon, SearchIcon } from './Icons'
 
 const FILTERS = [
@@ -14,8 +15,8 @@ const FILTERS = [
 function preview(chat) {
   const last = chat.lastMessage
   if (!last) return ''
-  if (last.type === 'voice') return '🎤 Voice message'
-  if (last.type === 'image') return '📷 Photo'
+  if (last.type === 'voice') return 'ðŸŽ¤ Voice message'
+  if (last.type === 'image') return 'ðŸ“· Photo'
   const who = last.from === 'me' ? 'You: ' : last.sender ? `${last.sender}: ` : ''
   return who + last.text
 }
@@ -45,6 +46,7 @@ export default function Sidebar({
   query,
   setQuery,
 }) {
+  const { isGray } = useGray()
   const pinned = allChats.filter((c) => c.pinned && !c.archived)
   const list = chats
 
@@ -85,8 +87,12 @@ export default function Sidebar({
               aria-label={APPS[id].name}
             >
               <NetworkIcon network={id} size={30} />
-              {state?.count > 0 && <span className="badge chip-badge">{state.count}</span>}
-              {state && !state.count && state.dot && <span className="chip-dot" />}
+              {state?.count > 0 && (
+                <span className={`badge chip-badge ${isGray(id, 'icon') ? 'gray' : ''}`}>{state.count}</span>
+              )}
+              {state && !state.count && state.dot && (
+                <span className={`chip-dot ${isGray(id, 'icon') ? 'gray' : ''}`} />
+              )}
             </button>
           )
         })}
@@ -124,7 +130,7 @@ export default function Sidebar({
       )}
 
       <ul className="chat-list">
-        {list.length === 0 && <li className="empty">Nothing here yet ✨</li>}
+        {list.length === 0 && <li className="empty">Nothing here yet âœ¨</li>}
         {list.map((c) => (
           <li key={c.id}>
             <button
