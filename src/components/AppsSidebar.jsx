@@ -1,3 +1,4 @@
+import AccountBar from './AccountBar'
 import NetworkIcon from './NetworkIcon'
 import ModeToggle from './ModeToggle'
 import { LayersIcon, MoonIcon, SunIcon } from './Icons'
@@ -18,6 +19,7 @@ export default function AppsSidebar({
   setMode,
   theme,
   toggleTheme,
+  account,
 }) {
   return (
     <aside className="sidebar">
@@ -61,8 +63,11 @@ export default function AppsSidebar({
       </ul>
 
       <p className="apps-note">
-        Each app signs in on its own official site. Logins stay on this device.
+        Each app signs in on its own official site. Logins are saved to your Bird
+        account on this device.
       </p>
+
+      {account && <AccountBar user={account.user} onSignOut={account.onSignOut} />}
     </aside>
   )
 }

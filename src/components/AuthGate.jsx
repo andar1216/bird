@@ -1,12 +1,11 @@
 import AuthForm from './AuthForm'
-import ModeToggle from './ModeToggle'
 
-// Shown in Unified mode until the user is signed in (or when the server is down).
-export default function AuthGate({ session, mode, setMode }) {
+// Shown until someone signs in (or when the server can't be reached).
+export default function AuthGate({ session }) {
   return (
     <div className="shell gate-shell">
       <div className="gate">
-        <ModeToggle mode={mode} onChange={setMode} />
+        <h1 className="gate-brand">Bird</h1>
 
         {session.status === 'loading' && <p className="gate-note">Loading…</p>}
 

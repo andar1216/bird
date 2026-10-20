@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 export default function AuthForm({ onSubmit }) {
   const [kind, setKind] = useState('login')
-  const [fields, setFields] = useState({ email: '', password: '', displayName: '' })
+  const [fields, setFields] = useState({ username: '', password: '', displayName: '' })
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const register = kind === 'register'
@@ -15,7 +15,7 @@ export default function AuthForm({ onSubmit }) {
     setError(null)
     try {
       await onSubmit(kind, {
-        email: fields.email,
+        username: fields.username,
         password: fields.password,
         ...(register ? { displayName: fields.displayName } : {}),
       })
@@ -31,30 +31,33 @@ export default function AuthForm({ onSubmit }) {
       <h2>{register ? 'Create your account' : 'Welcome back'}</h2>
       <p className="auth-sub">
         {register
-          ? 'Your chats are stored privately, per account.'
-          : 'Sign in to see your unified inbox.'}
+          ? 'Your chats and app logins are kept private to your account.'
+          : 'Sign in to see your chats and apps.'}
       </p>
 
+      <input
+        placeholder="Username"
+        autoComplete="username"
+        autoCapitalize="none"
+        spellCheck={false}
+        value={fields.username}
+        onChange={set('username')}
+        minLength={register ? 3 : undefined}
+        maxLength={30}
+        required
+      />
       {register && (
         <input
-          placeholder="Display name"
+          placeholder="Display name (optional)"
           autoComplete="name"
           value={fields.displayName}
           onChange={set('displayName')}
-          required
+          maxLength={60}
         />
       )}
       <input
-        type="email"
-        placeholder="Email"
-        autoComplete="email"
-        value={fields.email}
-        onChange={set('email')}
-        required
-      />
-      <input
         type="password"
-        placeholder="Password (8+ characters)"
+        placeholder={register ? 'Password (8+ characters)' : 'Password'}
         autoComplete={register ? 'new-password' : 'current-password'}
         value={fields.password}
         onChange={set('password')}

@@ -25,8 +25,10 @@ async function call(method, path, { token, body } = {}) {
 
 const userId = async (token) => (await call('GET', '/api/auth/me', { token })).body.user.id
 
-const register = (email, displayName = 'Test') =>
-  call('POST', '/api/auth/register', { body: { email, password: 'correct-horse-9', displayName } })
+const register = (username, displayName) =>
+  call('POST', '/api/auth/register', {
+    body: { username, password: 'correct-horse-9', ...(displayName ? { displayName } : {}) },
+  })
 
 before(async () => {
   assert.match(new URL(TEST_URI).pathname, /test/i, 'refusing to drop a non-test database')
@@ -45,11 +47,11 @@ after(async () => {
 })
 
 describe('auth', () => {
-  it('registers, returns a token, and resolves /me', async () => {
-    const res = await register('Ada@Example.com', 'Ada')
+  it('registers with a username, returns a token, and resolves /me', async () => {
+    const res = await register('Ada_L', 'Ada')
     assert.equal(res.status, 201)
     assert.ok(res.body.token)
-    assert.equal(res.body.user.email, 'ada@example.com')
+    assert.equal(res.body.user.username, 'ada_l', 'usernames are lowercased')
     assert.equal(res.body.user.passwordHash, undefined)
 
     const me = await call('GET', '/api/auth/me', { token: res.body.token })
@@ -57,34 +59,44 @@ describe('auth', () => {
     assert.equal(me.body.user.displayName, 'Ada')
   })
 
+  it('uses the username as display name when none is given', async () => {
+    const res = await register('plain.jane')
+    assert.equal(res.body.user.displayName, 'plain.jane')
+  })
+
   it('stores only a hash of the session token and a scrypt password hash', async () => {
-    const { token } = (await register('hash@example.com')).body
+    const { token } = (await register('hasher')).body
     const { Session } = await import('../src/models/Session.js')
     const { User } = await import('../src/models/User.js')
     assert.equal(await Session.countDocuments({ tokenHash: token }), 0)
-    const user = await User.findOne({ email: 'hash@example.com' }).select('+passwordHash')
+    const user = await User.findOne({ username: 'hasher' }).select('+passwordHash')
     assert.notEqual(user.passwordHash, 'correct-horse-9')
   })
 
-  it('rejects duplicate emails and weak input', async () => {
-    assert.equal((await register('ada@example.com')).status, 409)
+  it('rejects taken usernames (any case), bad usernames and weak passwords', async () => {
+    assert.equal((await register('ada_l')).status, 409)
+    assert.equal((await register('ADA_L')).status, 409)
+    assert.equal((await register('no spaces')).status, 400)
+    assert.equal((await register('ab')).status, 400)
+    assert.equal((await register('a@b.com')).status, 400)
     const weak = await call('POST', '/api/auth/register', {
-      body: { email: 'x@example.com', password: 'short', displayName: 'X' },
+      body: { username: 'weakling', password: 'short' },
     })
     assert.equal(weak.status, 400)
   })
 
-  it('logs in with the right password only', async () => {
+  it('logs in with the right username and password only', async () => {
     const ok = await call('POST', '/api/auth/login', {
-      body: { email: 'ada@example.com', password: 'correct-horse-9' },
+      body: { username: 'Ada_L', password: 'correct-horse-9' },
     })
     assert.equal(ok.status, 200)
+    assert.equal(ok.body.user.username, 'ada_l')
     const bad = await call('POST', '/api/auth/login', {
-      body: { email: 'ada@example.com', password: 'wrong-password' },
+      body: { username: 'ada_l', password: 'wrong-password' },
     })
     assert.equal(bad.status, 401)
     const unknown = await call('POST', '/api/auth/login', {
-      body: { email: 'nobody@example.com', password: 'whatever-123' },
+      body: { username: 'nobody', password: 'whatever-123' },
     })
     assert.equal(unknown.status, 401)
     assert.equal(unknown.body.error, bad.body.error)
@@ -94,9 +106,42 @@ describe('auth', () => {
     assert.equal((await call('GET', '/api/chats')).status, 401)
     assert.equal((await call('GET', '/api/chats', { token: 'nope' })).status, 401)
 
-    const { token } = (await register('logout@example.com')).body
+    const { token } = (await register('logout-user')).body
     assert.equal((await call('POST', '/api/auth/logout', { token })).status, 204)
     assert.equal((await call('GET', '/api/auth/me', { token })).status, 401)
+  })
+
+  it('migrates v1 email accounts to usernames, and they can still sign in', async () => {
+    const { User } = await import('../src/models/User.js')
+    const { migrate } = await import('../src/migrate.js')
+    const { passwordHash, passwordSalt } = await User.findOne({ username: 'hasher' }).select(
+      '+passwordHash +passwordSalt',
+    )
+    const users = mongoose.connection.collection('users')
+
+    // Recreate the v1 shape: no username index, accounts identified by email.
+    await users.dropIndex('username_1')
+    await users.createIndex({ email: 1 }, { unique: true, sparse: true })
+    await users.insertMany([
+      { email: 'Old.Timer@example.com', displayName: 'Old', passwordHash, passwordSalt },
+      { email: 'old.timer@other.org', displayName: 'Old 2', passwordHash, passwordSalt },
+    ])
+
+    await migrate()
+    await migrate() // safe to re-run
+    await User.createIndexes()
+
+    const names = (await users.find({}).toArray()).map((u) => u.username)
+    assert.ok(names.every(Boolean), 'every account has a username')
+    assert.ok(names.includes('old.timer'))
+    assert.ok(names.includes('old.timer2'), 'collisions get a numeric suffix')
+    assert.equal(await users.countDocuments({ email: { $exists: true } }), 0)
+
+    const login = await call('POST', '/api/auth/login', {
+      body: { username: 'old.timer', password: 'correct-horse-9' },
+    })
+    assert.equal(login.status, 200)
+    assert.equal((await register('brand-new')).status, 201, 'new sign-ups work after migration')
   })
 })
 
@@ -105,8 +150,8 @@ describe('per-user data', () => {
   let bob
 
   before(async () => {
-    alice = (await register('alice@example.com', 'Alice')).body.token
-    bob = (await register('bob@example.com', 'Bob')).body.token
+    alice = (await register('alice', 'Alice')).body.token
+    bob = (await register('bob', 'Bob')).body.token
   })
 
   it('starts empty and lists every network as disconnected', async () => {

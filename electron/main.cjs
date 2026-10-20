@@ -10,6 +10,9 @@ let win = null
 /** @type {Map<string, { view: WebContentsView, count: number, dot: boolean }>} */
 const views = new Map()
 let activeId = null
+// The signed-in Bird account. Each account gets its own web sessions, so one
+// account's Instagram/Discord logins are never visible to another account.
+let currentUserId = null
 let bounds = { x: 0, y: 0, width: 0, height: 0 }
 
 // ---------------------------------------------------------------- helpers
@@ -64,7 +67,7 @@ function lockDownSession(networkId, ses) {
 
 function createNetworkView(id) {
   const net = NETWORKS[id]
-  const ses = session.fromPartition(`persist:${id}`)
+  const ses = session.fromPartition(`persist:u-${currentUserId}-${id}`)
   lockDownSession(id, ses)
 
   const view = new WebContentsView({
@@ -118,8 +121,28 @@ function createNetworkView(id) {
   return entry
 }
 
+function destroyViews() {
+  for (const { view } of views.values()) {
+    if (win && !win.isDestroyed()) win.contentView.removeChildView(view)
+    if (!view.webContents.isDestroyed()) view.webContents.close()
+  }
+  views.clear()
+  activeId = null
+  sendToUI('bird:status', statusSnapshot())
+}
+
+// Called when someone signs in (id) or out (null). Closes every open web view;
+// cookies stay on disk under that account's partitions, so signing back in
+// brings the logins back.
+function setUser(id) {
+  if (id === currentUserId) return
+  destroyViews()
+  currentUserId = id
+}
+
 function showNetwork(id) {
-  activeId = id && NETWORKS[id] ? id : null
+  // No account, no apps.
+  activeId = currentUserId && id && NETWORKS[id] ? id : null
   for (const [viewId, entry] of views) entry.view.setVisible(viewId === activeId)
   if (activeId) {
     const entry = views.get(activeId) ?? createNetworkView(activeId)
@@ -182,6 +205,11 @@ function createWindow() {
 }
 
 // ------------------------------------------------------------------- IPC
+ipcMain.on('bird:set-user', (_event, id) => {
+  // Bird user ids are Mongo ObjectIds; they end up in a partition name on disk.
+  setUser(typeof id === 'string' && /^[a-f0-9]{24}$/.test(id) ? id : null)
+})
+
 ipcMain.on('bird:select-network', (_event, id) => {
   showNetwork(typeof id === 'string' ? id : null)
 })

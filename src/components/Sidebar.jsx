@@ -1,3 +1,4 @@
+import AccountBar from './AccountBar'
 import Avatar from './Avatar'
 import NetworkIcon from './NetworkIcon'
 import ModeToggle from './ModeToggle'
@@ -153,14 +154,7 @@ export default function Sidebar({
         ))}
       </ul>
 
-      {account && (
-        <div className="account-bar">
-          <span className="account-name" title={account.user.email}>
-            {account.user.displayName}
-          </span>
-          <button className="account-out" onClick={account.onSignOut}>Sign out</button>
-        </div>
-      )}
+      {account && <AccountBar user={account.user} onSignOut={account.onSignOut} />}
     </aside>
   )
 }
