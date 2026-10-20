@@ -953,3 +953,68 @@
 .topbar-brand { display: flex; align-items: center; gap: 8px; }
 .topbar-brand img { display: block; width: 30px; height: 30px; object-fit: contain; }
 .gate-brand img { display: block; width: 72px; height: 72px; margin: 0 auto 6px; object-fit: contain; }
+
+.convo-limit { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 12px 0; }
+
+/* Three-line button: tuck the list of messages away to give the app the whole window. */
+.topbar-menu {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-right: -6px;
+  border-radius: 10px;
+  color: var(--text-dim);
+}
+.topbar-menu:hover { background: var(--active); color: var(--text); }
+.topbar-menu.on { background: var(--accent-soft); color: var(--accent); }
+@media (min-width: 821px) {
+  .shell.list-hidden { grid-template-columns: 0 1fr; }
+  .shell.list-hidden .sidebar { visibility: hidden; overflow: hidden; border: 0; }
+}
+@media (max-width: 820px) {
+  .topbar-menu { display: none; }
+}
+
+/* Hide a conversation from All Chats until something new happens in it. */
+.chat-li { position: relative; }
+.row-hide {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--text-dim);
+  background: var(--panel-solid);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.chat-li:hover .row-hide, .row-hide:focus-visible { display: grid; }
+.row-hide:hover { color: var(--text); }
+.chat-row.is-hidden { opacity: 0.55; }
+
+/* Archive: conversations hidden from All Chats. */
+.hidden-section { padding: 6px 12px 10px; }
+.hidden-section h3 { margin: 10px 4px 0; font-size: 13px; font-weight: 650; color: var(--text); }
+.hidden-section p { margin: 2px 4px 6px; font-size: 12px; color: var(--text-dim); }
+.hidden-section { list-style: none; padding: 6px 0 10px; }
+.hidden-section ul { list-style: none; margin: 0; padding: 0; }
+
+/* Loading / refreshing indicator. */
+.spinner {
+  display: inline-block;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+.spinner.small { width: 14px; height: 14px; border-width: 2px; margin-left: -22px; }
+.empty-state .spinner { margin-bottom: 14px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }

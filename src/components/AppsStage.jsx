@@ -4,13 +4,24 @@ import { ColorRows } from './ColorMode'
 import NetworkIcon from './NetworkIcon'
 import { APPS } from '../data'
 import { bird } from '../bird'
+import { CONVERSATION_CHOICES } from '../useConversationLimit'
 
 // Main pane for an app: a small header (its settings icon opens a dropdown with
 // grayscale, any app tweaks and unlinking the account), and below it the area
 // where the desktop shell draws the official web
 // app. We report that area's position so the shell can place the web view.
 // In a browser we explain why the app isn't available.
-export default function AppsStage({ network }) {
+export default function AppsStage({ network, conversations }) {
+  // Apps whose conversations Bird lists in All Chats by reading the app's page.
+  const [listsChats, setListsChats] = useState(false)
+  useEffect(() => {
+    let live = true
+    bird?.getReaderApps?.().then((ids) => live && setListsChats(ids.includes(network)))
+    return () => {
+      live = false
+    }
+  }, [network])
+
   const bodyRef = useRef(null)
   const [options, setOptions] = useState([])
   const [prefs, setPrefs] = useState({})
@@ -140,6 +151,27 @@ export default function AppsStage({ network }) {
                   These tweaks depend on how {net.name} is built and may stop working if it changes.
                 </p>
               </div>
+            </>
+          )}
+
+          {listsChats && conversations && (
+            <>
+              <h4>Conversations in All Chats</h4>
+              <div className="convo-limit" role="group" aria-label="How many conversations to list">
+                {CONVERSATION_CHOICES.map((n) => (
+                  <button
+                    key={n ?? 'all'}
+                    className={`pill ${conversations.limitOf(network) === n ? 'on' : ''}`}
+                    onClick={() => conversations.setLimit(network, n)}
+                  >
+                    {n ?? 'All'}
+                  </button>
+                ))}
+              </div>
+              <p className="customize-note">
+                The most recent ones from {net.name}. Choosing a larger number loads older ones
+                in the background (up to 1,000).
+              </p>
             </>
           )}
 

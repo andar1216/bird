@@ -26,7 +26,7 @@ export function inboxToChat(item) {
   return {
     id: `${INBOX_PREFIX}${item.key}`,
     fromApp: true,
-    openPath: item.path, // a conversation read from the app's page
+    page: item.key.startsWith('page:'), // read from the app's own page
     network: item.app,
     name: item.name,
     colors: colorsFor(item.name),

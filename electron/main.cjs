@@ -5,7 +5,7 @@ const { NETWORKS, ALLOWED_PERMISSIONS, isAllowedUrl, parseBadge } = require('./n
 const custom = require('./customizations.cjs')
 const { createUsageTracker } = require('./usage.cjs')
 const { createInbox, hookScript, parseReport } = require('./inbox.cjs')
-const { readerFor, normalize } = require('./pagechats.cjs')
+const { readerFor, readerApps, normalize, limitOf, scrollScript } = require('./pagechats.cjs')
 
 const DEV_URL = process.env.BIRD_DEV_URL // set by `npm run electron:dev`
 const isDev = Boolean(DEV_URL)
@@ -166,41 +166,6 @@ function logStorageDiag(id, wc, phase) {
     .catch(() => {})
 }
 
-// TEMPORARY diagnostics (dev only): the shape (not the text) of Instagram's inbox
-// list, to learn how to read it. Text is replaced by its length.
-function logInstagramDiag(id, wc) {
-  if (!isDev || id !== 'instagram' || wc.isDestroyed()) return
-  const file = path.join(__dirname, '..', 'logs', 'instagram-diag.log')
-  wc.executeJavaScript(`(() => {
-    const walk = (n) => {
-      if (n.nodeType === 3) { const t = n.textContent.trim(); return t ? '[' + t.length + 'ch]' : '' }
-      if (n.nodeType !== 1) return ''
-      const tag = n.tagName.toLowerCase()
-      const attrs = [...n.attributes].map((a) => a.name === 'class' ? 'class="' + a.value.slice(0, 40) + '"'
-        : a.name === 'href' ? 'href="' + a.value.replace(/[0-9]{5,}/g, '..') + '"'
-        : a.name === 'role' || a.name === 'aria-label' || a.name === 'dir' ? a.name + '=' + (a.name === 'aria-label' ? '(' + a.value.length + ')' : a.value) : a.name).join(' ')
-      return '<' + tag + ' ' + attrs + '>' + [...n.childNodes].map(walk).join('') + '</' + tag + '>'
-    }
-    const roles = {}
-    for (const el of document.querySelectorAll('[role]')) roles[el.getAttribute('role')] = (roles[el.getAttribute('role')] || 0) + 1
-    const hrefs = [...document.querySelectorAll('a[href]')].map((a) => a.getAttribute('href').replace(/[0-9]{5,}/g, '..').slice(0, 40)).slice(0, 40)
-    const rows = [...document.querySelectorAll('[role="button"]')]
-      .filter((el) => el.innerText && el.innerText.split('\\n').filter(Boolean).length >= 3 && !el.closest('li'))
-    const outline = (el) => { const d = []; let n = el; for (let i = 0; i < 7 && n; i++, n = n.parentElement) d.push(n.tagName.toLowerCase() + (n.getAttribute('role') ? '[' + n.getAttribute('role') + ']' : '')); return d.join('<') }
-    const leaves = (el) => {
-      const out = []
-      const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
-      for (let n = w.nextNode(); n; n = w.nextNode()) {
-        const t = n.textContent.trim(); if (!t) continue
-        out.push(t.length + ':w' + getComputedStyle(n.parentElement).fontWeight + ':' + n.parentElement.tagName.toLowerCase())
-      }
-      return out
-    }
-    return JSON.stringify({ path: location.pathname, rows: rows.length, parents: rows.slice(0, 2).map(outline),
-      leaves: rows.slice(0, 6).map(leaves), first: rows[0] ? walk(rows[0]).slice(0, 4500) : null })  })()`)
-    .then((out) => fs.appendFileSync(file, '[' + new Date().toISOString() + '] ' + out + '\n'))
-    .catch((e) => fs.appendFileSync(file, 'error ' + e.message + '\n'))
-}
 function createNetworkView(id) {
   const net = NETWORKS[id]
   const ses = session.fromPartition(`persist:u-${currentUserId}-${id}`)
@@ -209,6 +174,7 @@ function createNetworkView(id) {
   const view = new WebContentsView({
     webPreferences: {
       session: ses,
+      preload: path.join(__dirname, 'network-preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -304,28 +270,76 @@ function createNetworkView(id) {
       setTimeout(() => {
         if (views.get(id) === entry && !rwc.isDestroyed()) rwc.loadURL(reader.url)
       }, 4_000)
-      rwc.once('did-finish-load', () => setTimeout(() => logInstagramDiag(id, rwc), 40_000)) // TEMPORARY
     }
-    const poll = () => {
-      if (views.get(id) !== entry || target.isDestroyed() || target.isLoading()) return
-      target.executeJavaScript(reader.script)
-        .then((json) => {
-          if (views.get(id) !== entry) return
-          const next = normalize(id, json)
-          const same = JSON.stringify(next) === JSON.stringify(pageChats.get(id) ?? [])
-          if (same) return
-          if (next.length) pageChats.set(id, next)
-          else pageChats.delete(id)
-          sendInbox()
-        })
-        .catch(() => {})
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+    const gone = () => views.get(id) !== entry || target.isDestroyed()
+    let polling = false
+    let reads = 0
+    let fullAt = -1 // the count at which scrolling stopped finding more
+    const poll = async () => {
+      if (polling || gone() || target.isLoading()) return
+      polling = true
+      try {
+        const limit = limitOf(pageLimits[id])
+        // Some lists only keep the rows on screen in the page, so rows are gathered
+        // as the list is scrolled rather than read all at once.
+        const found = new Map()
+        const take = async () => {
+          const got = normalize(id, await target.executeJavaScript(reader.script(limit)), Date.now(), limit)
+          for (const item of got) found.set(item.key, item)
+        }
+        await take()
+        reads++
+        if (found.size > 0 || reads >= 2) {
+          listed.add(id)
+          sendListing()
+        }
+        // Never move the page you are looking at.
+        const seeing = target === wc && activeId === id
+        let scrolled = false
+        let complete = false
+        if (!seeing) {
+          complete = true
+          for (let round = 0; round < (reader.virtual ? 80 : 25); round++) {
+            if (gone() || found.size >= limit || found.size === fullAt) break
+            const before = found.size
+            scrolled = true
+            const moved = await target.executeJavaScript(scrollScript(reader.rowSelector, false, reader.virtual))
+            await sleep(1_200)
+            await take()
+            if (!moved || found.size <= before) {
+              fullAt = found.size
+              break
+            }
+          }
+          if (scrolled && !gone()) await target.executeJavaScript(scrollScript(reader.rowSelector, true))
+        }
+        if (gone()) return
+        // While you're looking at the page only its visible rows can be read, so keep
+        // the ones already known instead of shrinking the list.
+        if (!complete) for (const old of pageChats.get(id) ?? []) if (!found.has(old.key)) found.set(old.key, old)
+        const items = [...found.values()].sort((a, b) => b.at - a.at).slice(0, limit)
+        const same = JSON.stringify(items) === JSON.stringify(pageChats.get(id) ?? [])
+        if (same) return
+        if (items.length) pageChats.set(id, items)
+        else pageChats.delete(id)
+        sendInbox()
+      } catch {
+        /* the page was busy or navigating: try again next time */
+      } finally {
+        polling = false
+      }
     }
+
     entry.pollTimer = setInterval(poll, 15_000)
     target.on('did-finish-load', () => setTimeout(poll, 6_000))
   }
 
   view.setVisible(false)
-  applyBounds(view)
+  // Pages lay themselves out for their size: one with no size (nothing opened yet) would
+  // list no conversations, so a hidden view gets a normal size until it is shown.
+  if (bounds.width < 200 || bounds.height < 200) view.setBounds({ x: 0, y: 0, width: 1000, height: 700 })
+  else applyBounds(view)
   win.contentView.addChildView(view)
   wc.loadURL(custom.startUrl(id, prefsFor(id)) ?? net.url)
   sendToUI('bird:status', statusSnapshot())
@@ -418,6 +432,33 @@ const onScreen = (id) => id === activeId && win && !win.isDestroyed() && win.isF
 // Conversations read from apps' own pages (see pagechats.cjs), by app. For an app
 // with page conversations those replace its notification entries, as they're fuller.
 const pageChats = new Map()
+// How many conversations each app lists (a number, null for all of them). Set by the UI.
+let pageLimits = {}
+
+// Apps whose conversation list is still being read for the first time (so the UI can
+// say "loading" instead of "no chats"). An app counts as listed once something was
+// read, or it was read twice and came up empty (not signed in, or truly none). It is
+// never waited on for more than a minute.
+const listed = new Set()
+const listingStart = new Map()
+let lastListing = ''
+function listingIds() {
+  const ids = []
+  for (const id of new Set([...backgroundApps, ...(activeId ? [activeId] : [])])) {
+    if (!readerFor(id) || listed.has(id) || !currentUserId) continue
+    const since = listingStart.get(id) ?? Date.now()
+    listingStart.set(id, since)
+    if (Date.now() - since < 60_000) ids.push(id)
+  }
+  return ids
+}
+function sendListing() {
+  const ids = listingIds()
+  const key = JSON.stringify(ids)
+  if (key === lastListing) return
+  lastListing = key
+  sendToUI('bird:listing', ids)
+}
 
 function inboxList() {
   if (!currentUserId || !inbox) return []
@@ -458,6 +499,8 @@ function closeView(id) {
   if (!entry) return
   disposeReader(entry)
   if (pageChats.delete(id)) sendInbox()
+  listed.delete(id)
+  listingStart.delete(id)
   if (!entry.view.webContents.isDestroyed()) entry.view.webContents.session.flushStorageData()
   if (win && !win.isDestroyed()) win.contentView.removeChildView(entry.view)
   if (!entry.view.webContents.isDestroyed()) entry.view.webContents.close()
@@ -496,6 +539,8 @@ function destroyViews() {
   backgroundTimer = null
   flushAllStorage() // keep this account's logins for the next sign-in
   pageChats.clear()
+  listed.clear()
+  listingStart.clear()
   for (const entry of views.values()) {
     const { view } = entry
     disposeReader(entry)
@@ -525,6 +570,11 @@ function showNetwork(id) {
   for (const [viewId, entry] of views) entry.view.setVisible(viewId === activeId)
   if (activeId) {
     const entry = views.get(activeId) ?? createNetworkView(activeId)
+    // You opened it: it may now use passkeys (they are refused while it runs unseen).
+    if (!entry.opened) {
+      entry.opened = true
+      entry.view.webContents.executeJavaScript('window.__birdPasskeys = true').catch(() => {})
+    }
     applyBounds(entry.view)
     entry.view.setVisible(true)
     // Opening an app means you're seeing its messages: they no longer count as unread.
@@ -614,6 +664,8 @@ ipcMain.on('bird:set-background-apps', (_event, ids) => {
     ? [...new Set(ids.filter((id) => typeof id === 'string' && NETWORKS[id]))].slice(0, 30)
     : []
   syncBackground()
+  sendListing()
+  setTimeout(sendListing, 61_000)
 })
 
 // Unlink one app's account: sign it out and wipe what Bird stored for it (cookies,
@@ -644,15 +696,61 @@ ipcMain.handle('bird:unlink-app', async (_event, id) => {
   return true
 })
 
-// Open one conversation inside its app (a path the app's reader produced).
-ipcMain.on('bird:open-app-chat', (_event, id, chatPath) => {
-  const reader = typeof id === 'string' ? readerFor(id) : null
-  if (!reader || typeof chatPath !== 'string' || !/^[\w/-]{1,200}$/.test(chatPath)) return
-  if (!chatPath.startsWith(reader.pathPrefix)) return
-  const entry = views.get(id)
+// Open one conversation (by the key we listed it under) inside its app.
+ipcMain.on('bird:open-app-chat', (_event, id, key) => {
+  const reader = typeof id === 'string' && typeof key === 'string' ? readerFor(id) : null
+  const item = reader && (pageChats.get(id) ?? []).find((x) => x.key === key)
+  const entry = item && views.get(id)
   if (!entry || entry.view.webContents.isDestroyed()) return
-  const url = new URL(chatPath, NETWORKS[id].url).toString()
-  if (isAllowedUrl(id, url) && entry.view.webContents.getURL() !== url) entry.view.webContents.loadURL(url)
+  const wc = entry.view.webContents
+  if (item.path) {
+    // The app links each conversation: go straight there.
+    const url = new URL(item.path, NETWORKS[id].url).toString()
+    if (isAllowedUrl(id, url) && wc.getURL() !== url) wc.loadURL(url)
+  } else if (reader.clickScript && !reader.url) {
+    // The list is on the page already: click the row with that name. Rows that are
+    // scrolled out of the page don't exist, so go back to the top of the list and retry.
+    const click = (triesLeft) =>
+      wc
+        .executeJavaScript(reader.clickScript(item.name))
+        .then(async (done) => {
+          if (done || triesLeft <= 0 || wc.isDestroyed()) return
+          await wc.executeJavaScript(scrollScript(reader.rowSelector, true)).catch(() => {})
+          setTimeout(() => click(triesLeft - 1), 400)
+        })
+        .catch(() => {})
+    click(12)
+  } else if (reader.clickScript && reader.url) {
+    // No links: open the app's list and click the row with that name.
+    const click = (triesLeft) =>
+      wc
+        .executeJavaScript(reader.clickScript(item.name))
+        .then((done) => {
+          if (!done && triesLeft > 0 && !wc.isDestroyed()) setTimeout(() => click(triesLeft - 1), 400)
+        })
+        .catch(() => {})
+    if (wc.getURL().startsWith(reader.url)) click(0)
+    else {
+      wc.once('did-finish-load', () => click(20)) // keeps trying until the list shows
+      wc.loadURL(reader.url)
+    }
+  }
+})
+// An app page asks (before its own scripts run) whether you have opened its app.
+ipcMain.on('bird:passkeys-allowed', (event) => {
+  event.returnValue = [...views.values()].some((e) => e.opened && e.view.webContents === event.sender)
+})
+// Which apps list their conversations from their pages, and how many to list each.
+ipcMain.handle('bird:reader-apps', () => readerApps())
+ipcMain.on('bird:set-page-limits', (_event, map) => {
+  const next = {}
+  if (map && typeof map === 'object') {
+    for (const id of readerApps()) {
+      const v = map[id]
+      if (v === null || (Number.isInteger(v) && v > 0)) next[id] = v
+    }
+  }
+  pageLimits = next
 })
 
 ipcMain.on('bird:select-network', (_event, id) => {
@@ -667,6 +765,7 @@ ipcMain.on('bird:set-bounds', (_event, rect) => {
 })
 
 ipcMain.handle('bird:get-status', () => statusSnapshot())
+ipcMain.handle('bird:get-listing', () => listingIds())
 
 ipcMain.on('bird:set-grayscale', (_event, map) => {
   if (!map || typeof map !== 'object') return

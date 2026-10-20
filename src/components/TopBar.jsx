@@ -11,6 +11,8 @@ export default function TopBar({
   onOpenUsage,
   onOpenMatrix,
   onHome,
+  listHidden,
+  onToggleList,
   appBar,
   onMenuOpenChange,
 }) {
@@ -29,6 +31,23 @@ export default function TopBar({
 
   return (
     <header className="topbar">
+      <button
+        className={`topbar-menu ${listHidden ? 'on' : ''}`}
+        onClick={onToggleList}
+        aria-pressed={listHidden}
+        aria-label={listHidden ? 'Show messages' : 'Hide messages'}
+        title={listHidden ? 'Show messages' : 'Hide messages'}
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path
+            d="M4 6h16M4 12h16M4 18h16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.200"
+            strokeLinecap="round"
+          />
+        </svg>
+      </button>
       <button className="topbar-brand" onClick={onHome} title="All chats">
         <img src="/bird.png" alt="" width="30" height="30" />
         Bird

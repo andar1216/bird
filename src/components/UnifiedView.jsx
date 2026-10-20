@@ -13,6 +13,10 @@ import { GrayscaleContext, useGrayscale } from '../useGrayscale'
 import { mergeChat, toUiChat, toUiMessage } from '../chatModel'
 import { INBOX_PREFIX, useInbox } from '../useInbox'
 import { useAllChatsScope } from '../useAllChatsScope'
+import { useConversationLimit } from '../useConversationLimit'
+import { useListHidden } from '../useListHidden'
+import { useListing } from '../useListing'
+import { useHiddenChats } from '../useHiddenChats'
 
 function matchesFilter(c, filter) {
   switch (filter) {
@@ -27,9 +31,10 @@ function matchesFilter(c, filter) {
   }
 }
 
-function Message({ title, children }) {
+function Message({ title, busy, children }) {
   return (
     <main className="chat empty-state">
+      {busy && <span className="spinner" role="status" aria-label="Loading" />}
       <h2>{title}</h2>
       {children}
     </main>
@@ -196,6 +201,9 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
 
   // Which apps All Chats includes (all of them down to none).
   const scope = useAllChatsScope(user.id)
+  const conversations = useConversationLimit(user.id)
+  const list = useListHidden(user.id)
+  const listing = useListing()
   const scopeOptions = useMemo(
     () => [...new Set([...apps, ...everyChat.map((c) => c.network)])],
     [apps, everyChat],
@@ -204,21 +212,32 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
 
   const openFromApp = (chat) => {
     bird?.markInboxRead(chat.id.slice(INBOX_PREFIX.length))
-    if (chat.openPath) bird?.openAppChat?.(chat.network, chat.openPath)
+    if (chat.page) bird?.openAppChat?.(chat.network, chat.id.slice(INBOX_PREFIX.length))
     selectNetwork(chat.network)
   }
 
+  // Conversations hidden from All Chats until something new happens in them.
+  const hiding = useHiddenChats(user.id, everyChat)
+
+  // In All Chats a hidden conversation is out of every list except the Archive's
+  // "Hidden" section.
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
+    const inAll = network === 'all'
     return everyChat
-      .filter(
-        (c) =>
-          matchesFilter(c, filter) &&
-          (network === 'all' ? scope.isShown(c.network) : appOpen || c.network === network) &&
-          (!q || c.name.toLowerCase().includes(q)),
-      )
+      .filter((c) => {
+        if (!(!q || c.name.toLowerCase().includes(q))) return false
+        if (!inAll) return matchesFilter(c, filter) && (appOpen || c.network === network)
+        if (!scope.isShown(c.network)) return false
+        if (hiding.hidden.has(c.id)) return filter === 'archive'
+        return matchesFilter(c, filter)
+      })
       .sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt))
-  }, [everyChat, filter, network, appOpen, query, scope])
+  }, [everyChat, filter, network, appOpen, query, scope, hiding.hidden])
+  const pinnable = useMemo(
+    () => inScope.filter((c) => !hiding.hidden.has(c.id)),
+    [inScope, hiding.hidden],
+  )
 
   const send = async (id, text) => {
     try {
@@ -243,9 +262,16 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   } else if (usageOpen) {
     pane = <UsagePanel onClose={() => setPanel(null)} />
   } else if (appOpen && network !== 'all') {
-    pane = <AppsStage key={network} network={network} />
+    pane = <AppsStage key={network} network={network} conversations={conversations} />
   } else if (load.status === 'loading') {
-    pane = <Message title="Loading your chats…" />
+    pane = <Message title="Loading your chats…" busy />
+  } else if (load.status === 'ready' && chats.length === 0 && appChats.length === 0 && listing) {
+    // Just opened or refreshed: the apps are still being read, so don't say there are none.
+    pane = (
+      <Message title="Loading your chats…" busy>
+        <p>Getting your recent conversations from your apps.</p>
+      </Message>
+    )
   } else if (load.status === 'error') {
     pane = (
       <Message title="Couldn’t load your chats">
@@ -292,6 +318,8 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
       onOpenUsage={() => setPanel((p) => (p === 'usage' ? null : 'usage'))}
       onOpenMatrix={() => setPanel('matrix')}
       onHome={() => selectNetwork('all')}
+      listHidden={list.hidden}
+      onToggleList={list.toggle}
       appBar={{
         apps,
         limit: appList.limit,
@@ -299,19 +327,28 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
         status: appStatus,
         onSelect: selectNetwork,
         onMove: appList.move,
-        onShow: appList.show,
+        // Showing or hiding an app on the bar does the same for its chats in All Chats.
+        onShow: (id) => {
+          appList.show(id)
+          scope.setShown([id], true)
+        },
         onHide: (id) => {
           appList.hide(id)
+          scope.setShown([id], false)
           if (network === id) selectNetwork('all')
         },
         onLimit: appList.setLimit,
       }}
       onMenuOpenChange={setMenuOpen}
     />
-    <div className={`shell ${mobileChatOpen ? 'show-chat' : ''}`}>
+    <div className={`shell ${mobileChatOpen ? 'show-chat' : ''} ${list.hidden ? 'list-hidden' : ''}`}>
       <Sidebar
         chats={visible}
-        allChats={inScope}
+        allChats={pinnable}
+        loading={listing}
+        hiddenIds={hiding.hidden}
+        onHide={hiding.hide}
+        onUnhide={hiding.unhide}
         scope={scope}
         scopeOptions={scopeOptions}
         activeId={activeId}

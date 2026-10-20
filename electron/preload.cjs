@@ -17,8 +17,11 @@ contextBridge.exposeInMainWorld('bird', {
   // The apps on the app bar; they load hidden in the background so their
   // notifications and unread counts arrive without opening them first.
   // Sign an app out and wipe its stored data for this Bird account.
-  // Open one conversation (a path from its app's list) inside that app.
-  openAppChat: (id, path) => ipcRenderer.send('bird:open-app-chat', id, path),
+  // Open one conversation (listed from its app's page) inside that app.
+  openAppChat: (id, key) => ipcRenderer.send('bird:open-app-chat', id, key),
+  // Apps that list their conversations from their pages, and how many each lists.
+  getReaderApps: () => ipcRenderer.invoke('bird:reader-apps'),
+  setPageLimits: (map) => ipcRenderer.send('bird:set-page-limits', map),
   unlinkApp: (id) => ipcRenderer.invoke('bird:unlink-app', id),
   setBackgroundApps: (ids) => ipcRenderer.send('bird:set-background-apps', ids),
   // Rectangle (CSS px, window-relative) where the web view should be drawn.
@@ -42,6 +45,9 @@ contextBridge.exposeInMainWorld('bird', {
   markInboxRead: (key) => ipcRenderer.send('bird:inbox-read', key),
   clearInbox: () => ipcRenderer.send('bird:inbox-clear'),
   onInbox: (cb) => subscribe('bird:inbox', cb),
+  // Apps whose conversation lists are still being read for the first time.
+  getListing: () => ipcRenderer.invoke('bird:get-listing'),
+  onListing: (cb) => subscribe('bird:listing', cb),
   onStatus: (cb) => subscribe('bird:status', cb),
   // Main asks the UI to switch network (e.g. a notification was clicked).
   onActiveNetwork: (cb) => subscribe('bird:active-network', cb),
