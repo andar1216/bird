@@ -1,9 +1,10 @@
-import { Chat } from '../models/Chat.js'
-import { Message } from '../models/Message.js'
-import { DEMO_CHATS } from '../seed/demoChats.js'
+import { Chat } from '../../src/models/Chat.js'
+import { Message } from '../../src/models/Message.js'
+import { DEMO_CHATS } from './demoChats.js'
 
-// Demo adapter: fills a user's account with sample conversations and "sends"
-// messages locally. Real network adapters implement the same interface.
+// Test-only adapter: fills an account with sample conversations and "sends"
+// messages locally, so the API can be tested without a real network. It is not
+// part of the app (register it with registerAdapter in a test).
 export const demoAdapter = {
   id: 'demo',
 

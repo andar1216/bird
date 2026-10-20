@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, it } from 'node:test'
 import mongoose from 'mongoose'
+import { registerAdapter } from '../src/adapters/index.js'
 import { createApp } from '../src/app.js'
 import { connectDb, disconnectDb } from '../src/db.js'
+import { demoAdapter } from './support/demoAdapter.js'
 
 // WARNING: this database is dropped before and after the run.
 const TEST_URI = process.env.MONGODB_URI_TEST ?? 'mongodb://127.0.0.1:27017/bird_test'
@@ -32,6 +34,7 @@ const register = (username, displayName) =>
 
 before(async () => {
   assert.match(new URL(TEST_URI).pathname, /test/i, 'refusing to drop a non-test database')
+  registerAdapter(demoAdapter) // the app ships no adapters; tests use sample data
   await connectDb(TEST_URI)
   await mongoose.connection.dropDatabase()
   await Promise.all(Object.values(mongoose.models).map((m) => m.init()))
@@ -281,5 +284,22 @@ describe('per-user data', () => {
     const { Message } = await import('../src/models/Message.js')
     const aliceId = (await call('GET', '/api/auth/me', { token: alice })).body.user.id
     assert.equal(await Message.countDocuments({ userId: aliceId }), 0)
+  })
+})
+
+describe('demo data removal', () => {
+  it('migrate() deletes sample chats, their messages and connections for every account', async () => {
+    const { migrate } = await import('../src/migrate.js')
+    const { token } = (await register('had-demo')).body
+    await call('PUT', '/api/connections/instagram', { token, body: { provider: 'demo' } })
+    assert.ok((await call('GET', '/api/chats', { token })).body.chats.length > 0)
+
+    await migrate()
+    await migrate() // safe to re-run
+
+    assert.equal((await call('GET', '/api/chats', { token })).body.chats.length, 0)
+    const conns = (await call('GET', '/api/connections', { token })).body.connections
+    assert.ok(conns.every((c) => c.status === 'disconnected'))
+    assert.equal(await mongoose.connection.collection('messages').countDocuments({}), 0)
   })
 })

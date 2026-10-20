@@ -902,3 +902,14 @@
 .usage-axis-spacer { flex: none; width: 22px; }
 .usage-axis { position: relative; flex: 1; height: 16px; }
 .usage-axis span { position: absolute; transform: translateX(-50%); font-size: 11.5px; color: var(--text-dim); white-space: nowrap; }
+
+.clear-app-chats {
+  flex: none;
+  margin: 6px 14px 12px;
+  padding: 8px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  text-align: center;
+}
+.clear-app-chats:hover { background: var(--hover); color: var(--text); }

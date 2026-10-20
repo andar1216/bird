@@ -10,7 +10,7 @@ import { useApps } from '../useApps'
 import { useBirdStatus } from '../useBirdStatus'
 import { GrayscaleContext, useGrayscale } from '../useGrayscale'
 import { mergeChat, toUiChat, toUiMessage } from '../chatModel'
-import { NETWORK_ORDER } from '../data'
+import { INBOX_PREFIX, useInbox } from '../useInbox'
 
 function matchesFilter(c, filter) {
   switch (filter) {
@@ -111,7 +111,7 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
     [fail],
   )
 
-  // Load this user's chats (and again on retry / after loading demo data).
+  // Load this user's chats (and again on retry).
   useEffect(() => {
     let live = true
     api
@@ -132,9 +132,19 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
     }
   }, [attempt, onSignOut, openChat])
 
+  // Conversations the apps told us about through notifications, next to the
+  // server's chats. Opening one opens its app.
+  const appChats = useInbox()
+  const everyChat = useMemo(() => [...chats, ...appChats], [chats, appChats])
+
+  const openFromApp = (chat) => {
+    bird?.markInboxRead(chat.id.slice(INBOX_PREFIX.length))
+    selectNetwork(chat.network)
+  }
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return chats
+    return everyChat
       .filter(
         (c) =>
           matchesFilter(c, filter) &&
@@ -142,7 +152,7 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
           (!q || c.name.toLowerCase().includes(q)),
       )
       .sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt))
-  }, [chats, filter, network, appOpen, query])
+  }, [everyChat, filter, network, appOpen, query])
 
   const send = async (id, text) => {
     try {
@@ -156,16 +166,6 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
       )
     } catch (err) {
       fail(err)
-    }
-  }
-
-  const loadDemo = async () => {
-    setLoad({ status: 'loading', error: null })
-    try {
-      await Promise.all(NETWORK_ORDER.map((n) => api.connect(n, 'demo')))
-      setAttempt((a) => a + 1)
-    } catch (err) {
-      setLoad({ status: 'error', error: err.message })
     }
   }
 
@@ -195,9 +195,12 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
     )
   } else if (chats.length === 0) {
     pane = (
-      <Message title="No chats yet">
-        <p>Connect your networks to see conversations here. For now you can load demo chats.</p>
-        <button className="auth-submit" onClick={loadDemo}>Load demo chats</button>
+      <Message title={appChats.length ? 'Pick a conversation' : 'No chats yet'}>
+        <p>
+          {appChats.length
+            ? 'Choose a conversation on the left to open it in its app.'
+            : 'Open an app from the icons on the left. When it notifies you of a new message, the conversation shows up here.'}
+        </p>
       </Message>
     )
   } else {
@@ -221,9 +224,12 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
     <div className={`shell ${mobileChatOpen ? 'show-chat' : ''}`}>
       <Sidebar
         chats={visible}
-        allChats={chats}
+        allChats={everyChat}
         activeId={activeId}
+        onClearAppChats={appChats.length ? () => bird?.clearInbox() : undefined}
         onSelect={(id) => {
+          const fromApp = appChats.find((c) => c.id === id)
+          if (fromApp) return openFromApp(fromApp)
           setAppOpen(false)
           setUsageOpen(false)
           openChat(id)

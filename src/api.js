@@ -43,7 +43,7 @@ export const api = {
   me: () => request('GET', '/api/auth/me'),
 
   listConnections: () => request('GET', '/api/connections'),
-  connect: (network, provider = 'demo') => request('PUT', `/api/connections/${network}`, { provider }),
+  connect: (network, provider) => request('PUT', `/api/connections/${network}`, { provider }),
   disconnect: (network) => request('DELETE', `/api/connections/${network}`),
 
   listChats: () => request('GET', '/api/chats'),

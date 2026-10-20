@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
-import { getAdapter, PROVIDERS } from '../adapters/index.js'
+import { getAdapter } from '../adapters/index.js'
 import { HttpError, parse } from '../lib/http.js'
 import { requireAuth } from '../middleware/auth.js'
 import { Chat } from '../models/Chat.js'
@@ -8,7 +8,8 @@ import { Connection } from '../models/Connection.js'
 import { Message } from '../models/Message.js'
 import { isNetwork, NETWORKS } from '../networks.js'
 
-const connectBody = z.object({ provider: z.enum(PROVIDERS) })
+// getAdapter() rejects providers that aren't registered.
+const connectBody = z.object({ provider: z.string().trim().min(1).max(40) })
 
 function serialize(network, c) {
   if (!c) return { network, status: 'disconnected' }

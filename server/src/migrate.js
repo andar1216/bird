@@ -32,4 +32,17 @@ export async function migrate() {
     await users.updateOne({ _id: user._id }, { $set: { username }, $unset: { email: '' } })
     console.log(`[migrate] user ${user._id} now signs in as "${username}"`)
   }
+
+  // Earlier versions could fill an account with sample ("demo") chats. Remove
+  // them, and the connections that created them, for every account.
+  const connections = mongoose.connection.collection('connections')
+  const chats = mongoose.connection.collection('chats')
+  const messages = mongoose.connection.collection('messages')
+  for (const c of await connections.find({ provider: 'demo' }).toArray()) {
+    const ids = await chats.find({ userId: c.userId, network: c.network }).map((x) => x._id).toArray()
+    const gone = await messages.deleteMany({ userId: c.userId, chatId: { $in: ids } })
+    await chats.deleteMany({ _id: { $in: ids } })
+    await connections.deleteOne({ _id: c._id })
+    console.log(`[migrate] removed ${ids.length} demo ${c.network} chats (${gone.deletedCount} messages)`)
+  }
 }

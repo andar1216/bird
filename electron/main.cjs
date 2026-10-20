@@ -4,6 +4,7 @@ const { app, BrowserWindow, WebContentsView, ipcMain, powerMonitor, session, she
 const { NETWORKS, ALLOWED_PERMISSIONS, isAllowedUrl, parseBadge } = require('./networks.cjs')
 const custom = require('./customizations.cjs')
 const { createUsageTracker } = require('./usage.cjs')
+const { createInbox, hookScript, parseReport } = require('./inbox.cjs')
 
 const DEV_URL = process.env.BIRD_DEV_URL // set by `npm run electron:dev`
 const isDev = Boolean(DEV_URL)
@@ -215,6 +216,12 @@ function createNetworkView(id) {
   wc.on('dom-ready', () => {
     applyCss(id)
     applyGrayscale(id)
+    wc.executeJavaScript(hookScript(NOTIFY_MARKER)).catch(() => {})
+  })
+  // New-message notifications the app raises are listed in All Chats.
+  wc.on('console-message', (event, ...legacy) => {
+    const report = parseReport(NOTIFY_MARKER, event.message ?? legacy[1])
+    if (report) recordNotification(id, report)
   })
   wc.once('did-finish-load', () => {
     setTimeout(() => logStorageDiag(id, wc, 'start+10s'), 10_000)
@@ -319,6 +326,34 @@ function trackUsage() {
   usage.set(inFront && !idle && currentUserId && activeId ? { u: currentUserId, a: activeId } : null)
 }
 
+// ------------------------------------------------------------ notifications
+// Apps show new messages as web notifications; we note each one (sender and
+// preview) so All Chats can list them. A random marker tags our own reports.
+const NOTIFY_MARKER = `__bird_${Math.random().toString(36).slice(2)}__:`
+let inbox = null // created once the app is ready
+let inboxSaveTimer = null
+
+const onScreen = (id) => id === activeId && win && !win.isDestroyed() && win.isFocused()
+
+function sendInbox() {
+  sendToUI('bird:inbox', currentUserId && inbox ? inbox.list(currentUserId) : [])
+}
+
+function scheduleInboxSave() {
+  inboxSaveTimer ??= setTimeout(() => {
+    inboxSaveTimer = null
+    inbox?.save()
+  }, 2_000)
+}
+
+function recordNotification(id, report) {
+  if (!inbox || !currentUserId) return
+  if (inbox.add(currentUserId, id, report, { seen: onScreen(id) })) {
+    sendInbox()
+    scheduleInboxSave()
+  }
+}
+
 function destroyViews() {
   flushAllStorage() // keep this account's logins for the next sign-in
   for (const { view } of views.values()) {
@@ -338,6 +373,7 @@ function setUser(id) {
   destroyViews()
   currentUserId = id
   trackUsage()
+  sendInbox()
 }
 
 function showNetwork(id) {
@@ -348,6 +384,11 @@ function showNetwork(id) {
     const entry = views.get(activeId) ?? createNetworkView(activeId)
     applyBounds(entry.view)
     entry.view.setVisible(true)
+    // Opening an app means you're seeing its messages: they no longer count as unread.
+    if (inbox?.markAppRead(currentUserId, activeId)) {
+      sendInbox()
+      scheduleInboxSave()
+    }
   }
   trackUsage()
 }
@@ -439,6 +480,23 @@ ipcMain.on('bird:set-grayscale', (_event, map) => {
   for (const id of views.keys()) if (before[id] !== next[id]) applyGrayscale(id)
 })
 
+// Conversations seen through app notifications (see recordNotification).
+ipcMain.handle('bird:get-inbox', () => (currentUserId && inbox ? inbox.list(currentUserId) : []))
+
+ipcMain.on('bird:inbox-read', (_event, key) => {
+  if (typeof key === 'string' && currentUserId && inbox?.markRead(currentUserId, key)) {
+    sendInbox()
+    scheduleInboxSave()
+  }
+})
+
+ipcMain.on('bird:inbox-clear', () => {
+  if (currentUserId && inbox?.clear(currentUserId)) {
+    sendInbox()
+    scheduleInboxSave()
+  }
+})
+
 // Screen time for the signed-in account: visits that ended after `since` (ms).
 ipcMain.handle('bird:get-usage', (_event, since) => {
   if (!usage || !currentUserId) return { now: Date.now(), segments: [], active: null }
@@ -495,6 +553,8 @@ if (!app.requestSingleInstanceLock()) {
     loadPrefs()
     usage = createUsageTracker(path.join(app.getPath('userData'), 'usage.json'))
     usage.load()
+    inbox = createInbox(path.join(app.getPath('userData'), 'inbox.json'))
+    inbox.load()
     createWindow()
     // Save logins and screen time often (not just on quit) so even a crash or
     // force-kill keeps them. The tick also notices when you go idle.
@@ -507,6 +567,7 @@ if (!app.requestSingleInstanceLock()) {
       flushAllStorage()
       usage.set(null)
       usage.save()
+      inbox.save()
     })
     watchForQuitRequest()
     app.on('activate', () => {

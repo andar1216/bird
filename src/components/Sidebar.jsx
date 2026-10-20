@@ -43,6 +43,7 @@ export default function Sidebar({
   extraApps,
   onAddApp,
   onRemoveApp,
+  onClearAppChats,
   query,
   setQuery,
 }) {
@@ -159,6 +160,11 @@ export default function Sidebar({
           </li>
         ))}
       </ul>
+      {onClearAppChats && (
+        <button className="clear-app-chats" onClick={onClearAppChats}>
+          Clear conversations from app notifications
+        </button>
+      )}
     </aside>
   )
 }

@@ -29,6 +29,12 @@ contextBridge.exposeInMainWorld('bird', {
   // Screen time: this account's visits since `since` (ms) as
   // { now, segments: [{ app, start, end, live }], active: { app, start } | null }.
   getUsage: (since) => ipcRenderer.invoke('bird:get-usage', since),
+  // Conversations seen through the apps' notifications:
+  // [{ app, key, name, preview, at, unread }], newest first.
+  getInbox: () => ipcRenderer.invoke('bird:get-inbox'),
+  markInboxRead: (key) => ipcRenderer.send('bird:inbox-read', key),
+  clearInbox: () => ipcRenderer.send('bird:inbox-clear'),
+  onInbox: (cb) => subscribe('bird:inbox', cb),
   onStatus: (cb) => subscribe('bird:status', cb),
   // Main asks the UI to switch network (e.g. a notification was clicked).
   onActiveNetwork: (cb) => subscribe('bird:active-network', cb),
