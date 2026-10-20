@@ -1,7 +1,6 @@
 import AccountBar from './AccountBar'
 import Avatar from './Avatar'
 import NetworkIcon from './NetworkIcon'
-import ModeToggle from './ModeToggle'
 import { NETWORKS, NETWORK_ORDER } from '../data'
 import { ComposeIcon, LayersIcon, MuteIcon, SearchIcon, MoonIcon, SunIcon } from './Icons'
 
@@ -42,8 +41,6 @@ export default function Sidebar({
   setQuery,
   theme,
   toggleTheme,
-  mode,
-  setMode,
   account,
 }) {
   const pinned = allChats.filter((c) => c.pinned && !c.archived)
@@ -61,8 +58,6 @@ export default function Sidebar({
           <button className="icon-btn" aria-label="New chat"><ComposeIcon /></button>
         </div>
       </header>
-
-      <ModeToggle mode={mode} onChange={setMode} />
 
       <div className="search">
         <SearchIcon width={16} height={16} />

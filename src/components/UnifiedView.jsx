@@ -27,7 +27,7 @@ function Message({ title, children }) {
   )
 }
 
-export default function UnifiedView({ user, onSignOut, mode, setMode, theme, toggleTheme }) {
+export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   const [chats, setChats] = useState([])
   const [load, setLoad] = useState({ status: 'loading', error: null })
   const [attempt, setAttempt] = useState(0)
@@ -171,8 +171,6 @@ export default function UnifiedView({ user, onSignOut, mode, setMode, theme, tog
         setQuery={setQuery}
         theme={theme}
         toggleTheme={toggleTheme}
-        mode={mode}
-        setMode={setMode}
         account={{ user, onSignOut }}
       />
       {pane}

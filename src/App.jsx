@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import AuthGate from './components/AuthGate'
-import Workspace from './components/Workspace'
+import UnifiedView from './components/UnifiedView'
 import { useSession } from './useSession'
 import './App.css'
 
@@ -16,7 +16,7 @@ export default function App() {
   // different account, starts from a clean slate.
   const content =
     session.status === 'authed' ? (
-      <Workspace
+      <UnifiedView
         key={session.user.id}
         user={session.user}
         onSignOut={session.signOut}
