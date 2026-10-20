@@ -7,6 +7,7 @@ import { errorHandler, notFound } from './middleware/errors.js'
 import { authRouter } from './routes/auth.js'
 import { chatsRouter } from './routes/chats.js'
 import { connectionsRouter } from './routes/connections.js'
+import { matrixRouter } from './routes/matrix.js'
 
 export function createApp({ corsOrigins = config.corsOrigins } = {}) {
   const app = express()
@@ -26,6 +27,7 @@ export function createApp({ corsOrigins = config.corsOrigins } = {}) {
   app.use('/api/auth', authRouter)
   app.use('/api/connections', connectionsRouter)
   app.use('/api/chats', chatsRouter)
+  app.use('/api/matrix', matrixRouter)
 
   app.use(notFound)
   app.use(errorHandler)

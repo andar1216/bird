@@ -19,6 +19,7 @@ export default function ProfileMenu({
   theme,
   toggleTheme,
   onOpenChange,
+  onOpenMatrix,
 }) {
   const [open, setOpen] = useState(false)
   const { defaultOn, toggleDefault } = useGray()
@@ -101,6 +102,27 @@ export default function ProfileMenu({
             </button>
           ))}
           <div className="menu-sep" />
+
+          <button
+            className="menu-item"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false)
+              onOpenMatrix?.()
+            }}
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path
+                d="M8 5H6v14h2M16 5h2v14h-2M9.500 15V9l2.500 3 2.500-3v6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.800"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="menu-label">Matrix and bridges</span>
+          </button>
 
           <button
             className="menu-item"

@@ -46,6 +46,11 @@ export const api = {
   connect: (network, provider) => request('PUT', `/api/connections/${network}`, { provider }),
   disconnect: (network) => request('DELETE', `/api/connections/${network}`),
 
+  // The Matrix account that brings in real chats (through bridges).
+  matrixAccount: () => request('GET', '/api/matrix'),
+  connectMatrix: (fields) => request('PUT', '/api/matrix', fields),
+  disconnectMatrix: () => request('DELETE', '/api/matrix'),
+
   listChats: () => request('GET', '/api/chats'),
   listMessages: (chatId) => request('GET', `/api/chats/${chatId}/messages`),
   sendMessage: (chatId, text) => request('POST', `/api/chats/${chatId}/messages`, { text }),

@@ -913,3 +913,41 @@
   text-align: center;
 }
 .clear-app-chats:hover { background: var(--hover); color: var(--text); }
+
+/* ---------- Matrix ---------- */
+.matrix-card .auth-form { max-width: 380px; }
+.matrix-who { margin: 0; font-size: 20px; font-weight: 700; }
+.matrix-danger {
+  margin-top: 14px;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 19px;
+  color: #e5484d;
+  font-weight: 650;
+  background: var(--pill);
+}
+.matrix-danger:disabled { opacity: 0.6; cursor: default; }
+.usage-card code { padding: 1px 6px; border-radius: 6px; background: var(--pill); font-size: 12px; }
+
+/* ---------- Which apps All Chats shows ---------- */
+.scope { position: relative; }
+.icon-btn.scoped { color: var(--accent); background: var(--accent-soft); }
+.scope-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 280px;
+  max-height: min(460px, 70vh);
+  overflow-y: auto;
+  padding: 14px 8px 8px;
+  border-radius: 18px;
+  background: var(--panel-solid);
+  box-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--border);
+}
+.scope-menu h3 { margin: 0 8px 10px; font-size: 14px; }
+.scope-quick { display: flex; gap: 6px; margin: 0 8px 8px; }
+.scope-menu ul { list-style: none; margin: 0; padding: 0; }
+.scope-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 7px 8px; border-radius: 12px; text-align: left; }
+.scope-row:hover { background: var(--active); }
+.scope-name { flex: 1; min-width: 0; font-weight: 650; font-size: 14.5px; }

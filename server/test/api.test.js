@@ -4,6 +4,7 @@ import mongoose from 'mongoose'
 import { registerAdapter } from '../src/adapters/index.js'
 import { createApp } from '../src/app.js'
 import { connectDb, disconnectDb } from '../src/db.js'
+import { NETWORKS } from '../src/networks.js'
 import { demoAdapter } from './support/demoAdapter.js'
 
 // WARNING: this database is dropped before and after the run.
@@ -160,7 +161,7 @@ describe('per-user data', () => {
   it('starts empty and lists every network as disconnected', async () => {
     assert.deepEqual((await call('GET', '/api/chats', { token: alice })).body.chats, [])
     const { connections } = (await call('GET', '/api/connections', { token: alice })).body
-    assert.equal(connections.length, 4)
+    assert.equal(connections.length, NETWORKS.length)
     assert.ok(connections.every((c) => c.status === 'disconnected'))
   })
 

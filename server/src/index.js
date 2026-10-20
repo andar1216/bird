@@ -1,6 +1,7 @@
 import { createApp } from './app.js'
 import { config } from './config.js'
 import { connectDb, disconnectDb } from './db.js'
+import { startAllSync, stopAllSync } from './matrix/sync.js'
 
 try {
   await connectDb(config.mongoUri)
@@ -14,7 +15,10 @@ const server = createApp().listen(config.port, config.host, () => {
   console.log(`[server] http://${config.host}:${config.port}  (db: ${config.mongoUri})`)
 })
 
+await startAllSync() // resume every saved Matrix account
+
 async function shutdown() {
+  stopAllSync()
   server.close()
   await disconnectDb()
   process.exit(0)

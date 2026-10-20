@@ -7,6 +7,7 @@ export default function TopBar({
   toggleTheme,
   usageOpen,
   onOpenUsage,
+  onOpenMatrix,
   onMenuOpenChange,
 }) {
   return (
@@ -36,6 +37,7 @@ export default function TopBar({
           theme={theme}
           toggleTheme={toggleTheme}
           onOpenChange={onMenuOpenChange}
+          onOpenMatrix={onOpenMatrix}
         />
       </div>
     </header>

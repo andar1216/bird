@@ -31,6 +31,7 @@ const chatSchema = new mongoose.Schema(
     streak: Number, // Snapchat streak
     lastMessage: lastMessageSchema,
     lastMessageAt: { type: Date, default: Date.now },
+    lastEventId: String, // newest remote message, for read receipts (not sent to the UI)
   },
   { timestamps: true },
 )

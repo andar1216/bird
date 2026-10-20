@@ -35,3 +35,7 @@ element-web/
 *.njsproj
 *.sln
 *.sw?
+
+# Secrets (encryption key for stored tokens)
+server/.secrets/
+server/.data/

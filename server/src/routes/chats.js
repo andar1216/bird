@@ -59,13 +59,13 @@ chatsRouter.post('/:id/messages', async (req, res) => {
     throw new HttpError(409, `${chat.network} is not connected`)
   }
 
-  const { status } = await getAdapter(connection.provider).sendMessage({
+  const { status, externalId } = await getAdapter(connection.provider).sendMessage({
     userId: req.user._id,
     chat,
     text,
   })
   const sentAt = new Date()
-  const message = await Message.create({
+  const fields = {
     userId: req.user._id,
     chatId: chat._id,
     from: 'me',
@@ -73,9 +73,19 @@ chatsRouter.post('/:id/messages', async (req, res) => {
     text,
     sentAt,
     status,
-  })
+  }
+  // If the network also reports this message back (Matrix does), whichever
+  // arrives first creates it and the other leaves it alone.
+  const message = externalId
+    ? await Message.findOneAndUpdate(
+        { userId: req.user._id, externalId },
+        { $setOnInsert: fields },
+        { upsert: true, returnDocument: 'after' },
+      )
+    : await Message.create(fields)
   chat.lastMessage = { from: 'me', type: 'text', text, sentAt }
   chat.lastMessageAt = sentAt
+  if (externalId) chat.lastEventId = externalId
   await chat.save()
   res.status(201).json({ message: serializeMessage(message), chat: serializeChat(chat) })
 })
@@ -85,6 +95,15 @@ chatsRouter.post('/:id/read', async (req, res) => {
   chat.unread = 0
   chat.mention = false
   await chat.save()
+  // Tell the network too (best effort; a failure must not stop the UI).
+  try {
+    const connection = await Connection.findOne({ userId: req.user._id, network: chat.network })
+    if (connection) {
+      await getAdapter(connection.provider).markRead?.({ userId: req.user._id, chat })
+    }
+  } catch (err) {
+    console.warn(`[chats] could not mark read remotely: ${err.message}`)
+  }
   res.json({ chat: serializeChat(chat) })
 })
 

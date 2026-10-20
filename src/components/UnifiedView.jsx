@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Sidebar from './Sidebar'
 import ChatView from './ChatView'
 import AppsStage from './AppsStage'
 import TopBar from './TopBar'
 import UsagePanel from './UsagePanel'
+import MatrixPanel from './MatrixPanel'
 import { api } from '../api'
 import { bird } from '../bird'
 import { useApps } from '../useApps'
@@ -11,6 +12,7 @@ import { useBirdStatus } from '../useBirdStatus'
 import { GrayscaleContext, useGrayscale } from '../useGrayscale'
 import { mergeChat, toUiChat, toUiMessage } from '../chatModel'
 import { INBOX_PREFIX, useInbox } from '../useInbox'
+import { useAllChatsScope } from '../useAllChatsScope'
 
 function matchesFilter(c, filter) {
   switch (filter) {
@@ -48,8 +50,10 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   const [appOpen, setAppOpen] = useState(false)
   // The profile menu is open: the native web view must step aside so it shows.
   const [menuOpen, setMenuOpen] = useState(false)
-  // The screen-time page fills the main pane (the web view steps aside too).
-  const [usageOpen, setUsageOpen] = useState(false)
+  // A full-pane page: 'usage' (screen time) or 'matrix' (account setup).
+  // The native web view steps aside while one is open.
+  const [panel, setPanel] = useState(null)
+  const usageOpen = panel === 'usage'
   const gray = useGrayscale(user.id)
   const appStatus = useBirdStatus()
   const { apps, extra: extraApps, add: addApp, remove: removeApp } = useApps(user.id)
@@ -63,8 +67,8 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   }, [user.id])
 
   useEffect(() => {
-    bird?.selectNetwork(appOpen && !menuOpen && !usageOpen ? network : null)
-  }, [appOpen, menuOpen, usageOpen, network, user.id])
+    bird?.selectNetwork(appOpen && !menuOpen && !panel ? network : null)
+  }, [appOpen, menuOpen, panel, network, user.id])
 
   // The shell can ask us to show an app (e.g. a notification was clicked).
   useEffect(
@@ -72,7 +76,7 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
       bird?.onActiveNetwork((id) => {
         setNetwork(id)
         setAppOpen(true)
-        setUsageOpen(false)
+        setPanel(null)
       }),
     [],
   )
@@ -81,7 +85,7 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   const selectNetwork = (id) => {
     setNetwork(id)
     setAppOpen(id !== 'all')
-    setUsageOpen(false)
+    setPanel(null)
   }
 
   // A rejected token means the session is gone: go back to the sign-in screen.
@@ -111,6 +115,49 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
     [fail],
   )
 
+  // Pick up changes made on the server in the background (the Matrix sync adds
+  // chats and messages while Bird is open). Keeps loaded messages; if the open
+  // chat got something new, reload its messages too.
+  const chatsRef = useRef(chats)
+  const activeRef = useRef(activeId)
+  useEffect(() => {
+    chatsRef.current = chats
+    activeRef.current = activeId
+  })
+
+  const refreshChats = useCallback(async () => {
+    try {
+      const { chats: fresh } = await api.listChats()
+      const old = new Map(chatsRef.current.map((c) => [c.id, c]))
+      const open = activeRef.current
+      const openChanged =
+        open && old.has(open) && fresh.some((f) => f.id === open && f.lastMessageAt !== old.get(open).lastMessageAt)
+      setChats(
+        fresh.map((f) => {
+          const was = old.get(f.id)
+          const next = was ? mergeChat(was, f) : toUiChat(f)
+          return f.id === open && openChanged ? { ...next, unread: 0, mention: false } : next
+        }),
+      )
+      if (openChanged) {
+        api.markRead(open).catch(() => {})
+        const { messages } = await api.listMessages(open)
+        setChats((cs) => cs.map((c) => (c.id === open ? { ...c, messages: messages.map(toUiMessage) } : c)))
+      }
+    } catch (err) {
+      if (err.status === 401) onSignOut()
+      // other failures are transient: try again on the next tick
+    }
+  }, [onSignOut])
+
+  useEffect(() => {
+    if (load.status !== 'ready') return undefined
+    const timer = setInterval(() => {
+      if (!document.hidden) refreshChats()
+    }, 8000)
+    return () => clearInterval(timer)
+  }, [load.status, refreshChats])
+
   // Load this user's chats (and again on retry).
   useEffect(() => {
     let live = true
@@ -137,6 +184,14 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   const appChats = useInbox()
   const everyChat = useMemo(() => [...chats, ...appChats], [chats, appChats])
 
+  // Which apps All Chats includes (all of them down to none).
+  const scope = useAllChatsScope(user.id)
+  const scopeOptions = useMemo(
+    () => [...new Set([...apps, ...everyChat.map((c) => c.network)])],
+    [apps, everyChat],
+  )
+  const inScope = useMemo(() => everyChat.filter((c) => scope.isShown(c.network)), [everyChat, scope])
+
   const openFromApp = (chat) => {
     bird?.markInboxRead(chat.id.slice(INBOX_PREFIX.length))
     selectNetwork(chat.network)
@@ -148,11 +203,11 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
       .filter(
         (c) =>
           matchesFilter(c, filter) &&
-          (network === 'all' || appOpen || c.network === network) &&
+          (network === 'all' ? scope.isShown(c.network) : appOpen || c.network === network) &&
           (!q || c.name.toLowerCase().includes(q)),
       )
       .sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt))
-  }, [everyChat, filter, network, appOpen, query])
+  }, [everyChat, filter, network, appOpen, query, scope])
 
   const send = async (id, text) => {
     try {
@@ -172,8 +227,10 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   const active = chats.find((c) => c.id === activeId)
 
   let pane
-  if (usageOpen) {
-    pane = <UsagePanel onClose={() => setUsageOpen(false)} />
+  if (panel === 'matrix') {
+    pane = <MatrixPanel onClose={() => setPanel(null)} onChanged={refreshChats} />
+  } else if (usageOpen) {
+    pane = <UsagePanel onClose={() => setPanel(null)} />
   } else if (appOpen && network !== 'all') {
     pane = <AppsStage key={network} network={network} />
   } else if (load.status === 'loading') {
@@ -199,8 +256,11 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
         <p>
           {appChats.length
             ? 'Choose a conversation on the left to open it in its app.'
-            : 'Open an app from the icons on the left. When it notifies you of a new message, the conversation shows up here.'}
+            : 'Connect a Matrix account to bring in your recent conversations, or open an app from the icons on the left: when it notifies you of a new message, the conversation shows up here.'}
         </p>
+        <button className="auth-submit" onClick={() => setPanel('matrix')}>
+          Connect Matrix
+        </button>
       </Message>
     )
   } else {
@@ -218,20 +278,23 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
       theme={theme}
       toggleTheme={toggleTheme}
       usageOpen={usageOpen}
-      onOpenUsage={() => setUsageOpen((open) => !open)}
+      onOpenUsage={() => setPanel((p) => (p === 'usage' ? null : 'usage'))}
+      onOpenMatrix={() => setPanel('matrix')}
       onMenuOpenChange={setMenuOpen}
     />
     <div className={`shell ${mobileChatOpen ? 'show-chat' : ''}`}>
       <Sidebar
         chats={visible}
-        allChats={everyChat}
+        allChats={inScope}
+        scope={scope}
+        scopeOptions={scopeOptions}
         activeId={activeId}
         onClearAppChats={appChats.length ? () => bird?.clearInbox() : undefined}
         onSelect={(id) => {
           const fromApp = appChats.find((c) => c.id === id)
           if (fromApp) return openFromApp(fromApp)
           setAppOpen(false)
-          setUsageOpen(false)
+          setPanel(null)
           openChat(id)
         }}
         filter={filter}

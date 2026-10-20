@@ -3,7 +3,8 @@ import AddAppMenu from './AddAppMenu'
 import NetworkIcon from './NetworkIcon'
 import { APPS } from '../data'
 import { useGray } from '../useGrayscale'
-import { ComposeIcon, LayersIcon, MuteIcon, SearchIcon } from './Icons'
+import ScopeMenu from './ScopeMenu'
+import { ComposeIcon, MuteIcon, SearchIcon } from './Icons'
 
 const FILTERS = [
   { id: 'inbox', label: 'Inbox' },
@@ -32,6 +33,8 @@ function Badge({ chat }) {
 export default function Sidebar({
   chats,
   allChats,
+  scope,
+  scopeOptions,
   activeId,
   onSelect,
   filter,
@@ -54,7 +57,7 @@ export default function Sidebar({
   return (
     <aside className="sidebar">
       <header className="sidebar-head">
-        <button className="icon-btn" aria-label="Accounts"><LayersIcon /></button>
+        <ScopeMenu options={scopeOptions} scope={scope} />
         <h1>All Chats</h1>
         <div className="head-actions">
           <button className="icon-btn" aria-label="New chat"><ComposeIcon /></button>
@@ -131,7 +134,13 @@ export default function Sidebar({
       )}
 
       <ul className="chat-list">
-        {list.length === 0 && <li className="empty">Nothing here yet ✨</li>}
+        {list.length === 0 && (
+          <li className="empty">
+            {network === 'all' && scopeOptions.length > 0 && scopeOptions.every((id) => !scope.isShown(id))
+              ? 'No apps are shown in All Chats. Use the layers button above to pick some.'
+              : 'Nothing here yet ✨'}
+          </li>
+        )}
         {list.map((c) => (
           <li key={c.id}>
             <button

@@ -1,0 +1,59 @@
+# Matrix homeserver (Synapse) plus mautrix bridges for Bird.
+# NOT TESTED by the Bird project: follow README.md, and check each bridge's own
+# docs (https://docs.mau.fi/bridges/) for the current config options.
+#
+# Each bridge writes its config to ./<name>/config.yaml on first start, then
+# stops. Edit it, start it again, and it writes ./<name>/registration.yaml,
+# which Synapse must be told about (see README.md).
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: synapse
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_DB: synapse
+      # Synapse needs the C collation.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+
+  synapse:
+    image: matrixdotorg/synapse:latest
+    restart: unless-stopped
+    depends_on: [postgres]
+    ports:
+      - "127.0.0.1:8008:8008" # Bird connects here (http is allowed for localhost)
+    volumes:
+      - ./synapse:/data
+
+  whatsapp:
+    image: dock.mau.dev/mautrix/whatsapp:latest
+    restart: unless-stopped
+    volumes: ["./whatsapp:/data"]
+
+  meta: # Instagram and Facebook Messenger
+    image: dock.mau.dev/mautrix/meta:latest
+    restart: unless-stopped
+    volumes: ["./meta:/data"]
+
+  discord:
+    image: dock.mau.dev/mautrix/discord:latest
+    restart: unless-stopped
+    volumes: ["./discord:/data"]
+
+  telegram:
+    image: dock.mau.dev/mautrix/telegram:latest
+    restart: unless-stopped
+    volumes: ["./telegram:/data"]
+
+  slack:
+    image: dock.mau.dev/mautrix/slack:latest
+    restart: unless-stopped
+    volumes: ["./slack:/data"]
+
+  gmessages: # Google Messages
+    image: dock.mau.dev/mautrix/gmessages:latest
+    restart: unless-stopped
+    volumes: ["./gmessages:/data"]

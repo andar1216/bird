@@ -99,6 +99,16 @@ const GLYPHS = {
       strokeLinejoin="round"
     />
   ),
+  matrix: (
+    <path
+      d="M8 5.500H6.500v13H8M16 5.500h1.500v13H16M9.500 15.500v-6l2.500 3 2.500-3v6"
+      fill="none"
+      stroke="#fff"
+      strokeWidth="1.800"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  ),
   gmail: (
     <path
       d="M5 8.500v8h3v-5l4 3 4-3v5h3v-8l-7 5.200z"
@@ -118,6 +128,7 @@ const BG = {
   linkedin: '#0a66c2',
   tiktok: '#010101',
   gmail: '#fff',
+  matrix: '#0dbd8b',
   instagram: 'linear-gradient(135deg,#feda75 0%,#fa7e1e 25%,#d62976 55%,#962fbf 80%,#4f5bd5 100%)',
   snapchat: '#fffc00',
   messages: '#1a73e8',

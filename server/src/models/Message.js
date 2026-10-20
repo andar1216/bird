@@ -13,10 +13,17 @@ const messageSchema = new mongoose.Schema(
     duration: String, // voice messages, e.g. "0:14"
     sentAt: { type: Date, default: Date.now },
     status: { type: String, enum: ['pending', 'sent', 'failed'], default: 'sent' },
+    // Id of the message on the remote network (a Matrix event id), if it has one.
+    externalId: String,
   },
   { timestamps: true },
 )
 messageSchema.index({ userId: 1, chatId: 1, sentAt: -1 })
+// A remote message is stored once per user, however many times it is reported.
+messageSchema.index(
+  { userId: 1, externalId: 1 },
+  { unique: true, partialFilterExpression: { externalId: { $type: 'string' } } },
+)
 
 export const Message = mongoose.model('Message', messageSchema)
 

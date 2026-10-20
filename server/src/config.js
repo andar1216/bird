@@ -13,4 +13,6 @@ export const config = {
     .filter(Boolean),
   sessionDays: num(process.env.SESSION_DAYS, 30),
   authRateLimit: num(process.env.AUTH_RATE_LIMIT, 50), // per 15 min per IP
+  // How long the homeserver may hold a /sync request open waiting for news.
+  matrixSyncTimeoutMs: num(process.env.MATRIX_SYNC_TIMEOUT_MS, 25_000),
 }

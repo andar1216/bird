@@ -1,17 +1,19 @@
 import { HttpError } from '../lib/http.js'
+import { matrixAdapter } from './matrix.js'
 
 /*
  * Network adapter interface (one per provider, e.g. "matrix"):
  *   id: string
  *   connect({ userId, network }) -> Promise<{ label?: string }>
  *       link the account and import chats/messages for that user
- *   sendMessage({ userId, chat, text }) -> Promise<{ status: 'sent' | 'pending' | 'failed' }>
+ *   sendMessage({ userId, chat, text }) ->
+ *       Promise<{ status: 'sent' | 'pending' | 'failed', externalId?: string }>
+ *   markRead({ userId, chat }) -> Promise<void>     (optional)
  * Adapters must only read and write documents for the given userId.
  *
- * No adapters ship yet, so no chats are created for you. Add one with
- * registerAdapter() when a real provider is built.
+ * The Matrix adapter is built in; tests can add their own with registerAdapter().
  */
-const adapters = new Map()
+const adapters = new Map([[matrixAdapter.id, matrixAdapter]])
 
 export function registerAdapter(adapter) {
   adapters.set(adapter.id, adapter)
