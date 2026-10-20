@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Sidebar from './Sidebar'
 import ChatView from './ChatView'
+import AppsStage from './AppsStage'
 import { api } from '../api'
+import { bird } from '../bird'
+import { useApps } from '../useApps'
+import { useBirdStatus } from '../useBirdStatus'
 import { mergeChat, toUiChat, toUiMessage } from '../chatModel'
 import { NETWORK_ORDER } from '../data'
 
@@ -37,6 +41,38 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   const [query, setQuery] = useState('')
   const [mobileChatOpen, setMobileChatOpen] = useState(false)
   const [notice, setNotice] = useState(null)
+  // True while the official web app for `network` fills the main pane.
+  const [appOpen, setAppOpen] = useState(false)
+  const appStatus = useBirdStatus()
+  const { apps, extra: extraApps, add: addApp, remove: removeApp } = useApps(user.id)
+
+  // Tell the desktop shell whose web sessions to use (so each Bird account keeps
+  // its own app logins). Declared before the select effect so the shell knows
+  // the account first; cleanup closes every web view on sign out.
+  useEffect(() => {
+    bird?.setUser(user.id)
+    return () => bird?.setUser(null)
+  }, [user.id])
+
+  useEffect(() => {
+    bird?.selectNetwork(appOpen ? network : null)
+  }, [appOpen, network, user.id])
+
+  // The shell can ask us to show an app (e.g. a notification was clicked).
+  useEffect(
+    () =>
+      bird?.onActiveNetwork((id) => {
+        setNetwork(id)
+        setAppOpen(true)
+      }),
+    [],
+  )
+
+  // An app icon opens that app; "All" returns to the combined inbox.
+  const selectNetwork = (id) => {
+    setNetwork(id)
+    setAppOpen(id !== 'all')
+  }
 
   // A rejected token means the session is gone: go back to the sign-in screen.
   const fail = useCallback(
@@ -92,11 +128,11 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
       .filter(
         (c) =>
           matchesFilter(c, filter) &&
-          (network === 'all' || c.network === network) &&
+          (network === 'all' || appOpen || c.network === network) &&
           (!q || c.name.toLowerCase().includes(q)),
       )
       .sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt))
-  }, [chats, filter, network, query])
+  }, [chats, filter, network, appOpen, query])
 
   const send = async (id, text) => {
     try {
@@ -126,7 +162,9 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   const active = chats.find((c) => c.id === activeId)
 
   let pane
-  if (load.status === 'loading') {
+  if (appOpen && network !== 'all') {
+    pane = <AppsStage network={network} />
+  } else if (load.status === 'loading') {
     pane = <Message title="Loading your chats…" />
   } else if (load.status === 'error') {
     pane = (
@@ -162,11 +200,22 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
         chats={visible}
         allChats={chats}
         activeId={activeId}
-        onSelect={openChat}
+        onSelect={(id) => {
+          setAppOpen(false)
+          openChat(id)
+        }}
         filter={filter}
         setFilter={setFilter}
         network={network}
-        setNetwork={setNetwork}
+        setNetwork={selectNetwork}
+        appStatus={appStatus}
+        apps={apps}
+        extraApps={extraApps}
+        onAddApp={addApp}
+        onRemoveApp={(id) => {
+          removeApp(id)
+          if (network === id) selectNetwork('all')
+        }}
         query={query}
         setQuery={setQuery}
         theme={theme}

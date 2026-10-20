@@ -23,6 +23,67 @@ const NETWORKS = {
     url: 'https://discord.com/app',
     hosts: ['discord.com', 'discordapp.com'],
   },
+
+  // ---- Web-only apps users can add with the "+" button (see src/data.js).
+  // Login pages for some of these live on shared identity domains, so those
+  // are listed too; everything else opens in the default browser.
+  whatsapp: {
+    name: 'WhatsApp',
+    url: 'https://web.whatsapp.com/',
+    hosts: ['whatsapp.com', 'whatsapp.net'],
+  },
+  messenger: {
+    name: 'Messenger',
+    url: 'https://www.messenger.com/',
+    hosts: ['messenger.com', 'facebook.com', 'fbcdn.net', 'fbsbx.com'],
+  },
+  facebook: {
+    name: 'Facebook',
+    url: 'https://www.facebook.com/',
+    hosts: ['facebook.com', 'fbcdn.net', 'fbsbx.com'],
+  },
+  x: {
+    name: 'X',
+    url: 'https://x.com/messages',
+    hosts: ['x.com', 'twitter.com', 'twimg.com'],
+  },
+  telegram: {
+    name: 'Telegram',
+    url: 'https://web.telegram.org/a/',
+    hosts: ['telegram.org'],
+  },
+  slack: {
+    name: 'Slack',
+    url: 'https://app.slack.com/client',
+    hosts: ['slack.com', 'slack-edge.com', 'slack-imgs.com'],
+  },
+  teams: {
+    name: 'Microsoft Teams',
+    url: 'https://teams.microsoft.com/',
+    hosts: [
+      'microsoft.com',
+      'microsoftonline.com',
+      'microsoft365.com',
+      'office.com',
+      'live.com',
+      'skype.com',
+    ],
+  },
+  linkedin: {
+    name: 'LinkedIn',
+    url: 'https://www.linkedin.com/messaging/',
+    hosts: ['linkedin.com', 'licdn.com'],
+  },
+  tiktok: {
+    name: 'TikTok',
+    url: 'https://www.tiktok.com/messages',
+    hosts: ['tiktok.com', 'tiktokcdn.com', 'tiktokcdn-us.com', 'tiktokv.com'],
+  },
+  gmail: {
+    name: 'Gmail',
+    url: 'https://mail.google.com/',
+    hosts: ['google.com', 'gstatic.com', 'googleusercontent.com'],
+  },
 }
 
 // Permissions a network page may be granted (only while on its own hosts).

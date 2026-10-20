@@ -1,7 +1,8 @@
 import AccountBar from './AccountBar'
 import Avatar from './Avatar'
+import AddAppMenu from './AddAppMenu'
 import NetworkIcon from './NetworkIcon'
-import { NETWORKS, NETWORK_ORDER } from '../data'
+import { APPS } from '../data'
 import { ComposeIcon, LayersIcon, MuteIcon, SearchIcon, MoonIcon, SunIcon } from './Icons'
 
 const FILTERS = [
@@ -37,6 +38,11 @@ export default function Sidebar({
   setFilter,
   network,
   setNetwork,
+  appStatus,
+  apps,
+  extraApps,
+  onAddApp,
+  onRemoveApp,
   query,
   setQuery,
   theme,
@@ -75,17 +81,23 @@ export default function Sidebar({
         >
           All
         </button>
-        {NETWORK_ORDER.map((id) => (
-          <button
-            key={id}
-            className={`net-chip icon-only ${network === id ? 'on' : ''}`}
-            onClick={() => setNetwork(network === id ? 'all' : id)}
-            title={NETWORKS[id].name}
-            aria-label={NETWORKS[id].name}
-          >
-            <NetworkIcon network={id} size={18} />
-          </button>
-        ))}
+        {apps.map((id) => {
+          const state = appStatus?.[id]
+          return (
+            <button
+              key={id}
+              className={`net-chip icon-only ${network === id ? 'on' : ''}`}
+              onClick={() => setNetwork(id)}
+              title={`Open ${APPS[id].name}`}
+              aria-label={APPS[id].name}
+            >
+              <NetworkIcon network={id} size={30} />
+              {state?.count > 0 && <span className="badge chip-badge">{state.count}</span>}
+              {state && !state.count && state.dot && <span className="chip-dot" />}
+            </button>
+          )
+        })}
+        <AddAppMenu extra={extraApps} onAdd={onAddApp} onRemove={onRemoveApp} />
       </div>
 
       <div className="filters">

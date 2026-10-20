@@ -1,16 +1,29 @@
-# React + Vite
+## ⚠️ Disclaimer
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**[App Name] is an unofficial, independent project.** It is not affiliated with, endorsed by, or sponsored by Instagram, Meta, Google, Discord, or any other service it connects to. All product names, logos, and trademarks belong to their respective owners and are used only to identify the services this software works with.
 
-Currently, two official plugins are available:
+### Use at your own risk
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Some integrations in this project use unofficial or undocumented methods to access these services, rather than official, supported APIs. As a result:
 
-## React Compiler
+- **Using this software may violate a service's Terms of Service.** You are solely responsible for reviewing and complying with the terms of every service you connect.
+- **Your accounts may be rate-limited, flagged, suspended, or banned.** The maintainers are not responsible for any loss of access, data, or account standing.
+- **Integrations may break without notice.** Platforms change their systems frequently, and unofficial integrations can stop working at any time.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Integrations that use official APIs (such as [list them, e.g. Discord bot/OAuth]) are separated from those that don't, so you can choose which to enable. Consider using a secondary account when trying experimental integrations.
 
-## Expanding the ESLint configuration
+### Privacy and data
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+[App Name] runs locally on your device. Your messages and credentials are stored on your machine and are not sent to any server operated by the maintainers. You are responsible for securing your device and any session data or tokens stored on it. Never share your session files or tokens, and never commit them to a public repository.
+
+### No warranty
+
+This software is provided "as is," without warranty of any kind, express or implied. To the fullest extent permitted by law, the authors and contributors are not liable for any claim, damages, or other liability arising from the use of this software. See the [LICENSE](LICENSE) file for full terms.
+
+### Intended use
+
+This project is intended for personal use with your own accounts. Do not use it to access accounts you don't own, to send spam or unsolicited messages, to scrape other people's data, or for any activity that violates applicable law.
+
+### Takedown requests
+
+If you represent a service and have concerns about this project, please open an issue or contact [your email], and we will review the request promptly.
