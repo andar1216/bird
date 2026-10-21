@@ -13,7 +13,7 @@ const isDev = Boolean(DEV_URL)
 // One identity for Bird on Windows, so the taskbar, Start and notifications all use
 // Bird's name and icon instead of Electron's (the Start-menu shortcut made by
 // scripts/make-shortcut.ps1 carries the same id).
-const APP_ID = 'com.bird.messenger'
+const APP_ID = 'com.bird.desktop'
 const ICON = path.join(__dirname, '..', 'build', process.platform === 'win32' ? 'icon.ico' : 'icon.png')
 app.setName('Bird')
 if (process.platform === 'win32') app.setAppUserModelId(APP_ID)

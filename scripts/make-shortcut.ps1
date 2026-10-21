@@ -5,7 +5,7 @@
 $root = Split-Path -Parent $PSScriptRoot
 $vbs = Join-Path $PSScriptRoot 'Bird.vbs'
 $icon = Join-Path $root 'build\icon.ico'
-$appId = 'com.bird.messenger' # keep in step with APP_ID in electron/main.cjs
+$appId = 'com.bird.desktop' # keep in step with APP_ID in electron/main.cjs
 
 Add-Type -TypeDefinition @'
 using System;
