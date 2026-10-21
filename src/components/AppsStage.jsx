@@ -11,7 +11,7 @@ import { CONVERSATION_CHOICES } from '../useConversationLimit'
 // where the desktop shell draws the official web
 // app. We report that area's position so the shell can place the web view.
 // In a browser we explain why the app isn't available.
-export default function AppsStage({ network, conversations }) {
+export default function AppsStage({ network, conversations, inOwnWindow = false }) {
   // Apps whose conversations Bird lists in All Chats by reading the app's page.
   const [listsChats, setListsChats] = useState(false)
   useEffect(() => {
@@ -208,7 +208,20 @@ export default function AppsStage({ network, conversations }) {
       )}
       <div className="apps-stage-body" ref={bodyRef}>
         <NetworkIcon network={network} size={72} />
-        {bird ? (
+        {bird && inOwnWindow ? (
+          <>
+            <h2>{net.name} is open in its own window</h2>
+            <p>Close that window, or bring it back, to use {net.name} here again.</p>
+            <div className="unlink-actions">
+              <button className="auth-submit" onClick={() => bird.detachApp(network)}>
+                Show window
+              </button>
+              <button className="app-menu-btn" onClick={() => bird.attachApp(network)}>
+                Bring back
+              </button>
+            </div>
+          </>
+        ) : bird ? (
           <>
             <h2>{net.name}</h2>
             <p>Sign in once on the official site and your session stays on this device.</p>

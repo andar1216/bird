@@ -88,9 +88,25 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
     bird?.setBackgroundApps?.(background)
   }, [background, user.id])
 
+  // Apps that were dragged out of the bar into windows of their own.
+  const [detached, setDetached] = useState([])
   useEffect(() => {
-    bird?.selectNetwork(appOpen && !menuOpen && !panel ? network : null)
-  }, [appOpen, menuOpen, panel, network, user.id])
+    if (!bird?.getDetached) return undefined
+    let live = true
+    bird.getDetached().then((ids) => live && setDetached(ids))
+    const off = bird.onDetached(setDetached)
+    return () => {
+      live = false
+      off()
+    }
+  }, [])
+
+  // An app in its own window is not drawn here, so Bird's window shows a note instead.
+  const inOwnWindow = detached.includes(network)
+  useEffect(() => {
+    const shown = appOpen && !menuOpen && !panel ? network : null
+    bird?.selectNetwork(shown && detached.includes(shown) ? null : shown)
+  }, [appOpen, menuOpen, panel, network, detached, user.id])
 
   // The shell can ask us to show an app (e.g. a notification was clicked).
   useEffect(
@@ -115,6 +131,7 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   const openApp = (id, via) => {
     bird?.recordOpen?.(id, via)
     selectNetwork(id)
+    if (detached.includes(id)) bird?.detachApp?.(id) // already in its own window: bring it forward
   }
 
   // A rejected token means the session is gone: go back to the sign-in screen.
@@ -281,7 +298,7 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   } else if (usageOpen) {
     pane = <UsagePanel onClose={() => setPanel(null)} />
   } else if (appOpen && network !== 'all') {
-    pane = <AppsStage key={network} network={network} conversations={conversations} />
+    pane = <AppsStage key={network} network={network} conversations={conversations} inOwnWindow={inOwnWindow} />
   } else if (load.status === 'loading') {
     pane = <Message title="Loading your chats…" busy />
   } else if (load.status === 'ready' && chats.length === 0 && appChats.length === 0 && listing) {
@@ -347,6 +364,9 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
         // Icon clicks that open an app are counted for screen time (going home isn't).
         onSelect: (id) => (id === 'all' ? selectNetwork(id) : openApp(id, 'app')),
         onMove: appList.move,
+        // Dropping an icon outside Bird opens that app in a window of its own.
+        detached,
+        onDetach: (id, point) => bird?.detachApp?.(id, point.x, point.y),
         // The icon and the chats are separate: hiding an icon leaves the app's chats in
         // All Chats (its own switch in the apps menu turns those off).
         onShow: appList.show,

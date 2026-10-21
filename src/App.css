@@ -1137,3 +1137,5 @@
 /* Grayscale All Chats: the list and Bird's own chat view (not Screen time or the native app pages). */
 .shell.gray-chats > .sidebar,
 .shell.gray-chats > .chat:not(.usage-pane) { filter: grayscale(1); }
+
+.app-tab.detached::after { content: ''; position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px; border-radius: 3px; border: 1.5px solid var(--accent); background: var(--panel-solid); }

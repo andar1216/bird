@@ -24,6 +24,8 @@ export default function AppBar({
   onAddCustom,
   onRemoveCustom,
   onOpenChange,
+  detached = [],
+  onDetach,
 }) {
   const { isGray } = useGray()
   const [moreOpen, setMoreOpen] = useState(false)
@@ -66,7 +68,8 @@ export default function AppBar({
       draggable: true,
       onDragStart: (e) => {
         e.dataTransfer.effectAllowed = 'move'
-        e.dataTransfer.setData('text/plain', id)
+        // A private type: other programs can't take the drop as text.
+        e.dataTransfer.setData('application/x-bird-app', id)
         setDrag({ id, over: null })
       },
     }),
@@ -81,7 +84,20 @@ export default function AppBar({
       if (drag && drag.id !== id) onMove(drag.id, id === 'more' ? null : id)
       setDrag(null)
     },
-    onDragEnd: () => setDrag(null),
+    onDragEnd: (e) => {
+      setDrag(null)
+      if (!source || !onDetach) return
+      // Dropped outside Bird's window (screen coordinates; 0,0 means no position): the
+      // app opens in a window of its own there.
+      const { screenX: x, screenY: y } = e
+      if (x === 0 && y === 0) return
+      const outside =
+        x < window.screenX ||
+        y < window.screenY ||
+        x > window.screenX + window.outerWidth ||
+        y > window.screenY + window.outerHeight
+      if (outside) onDetach(id, { x, y })
+    },
   })
 
   const overClass = (id) => (drag && drag.over === id && drag.id !== id ? 'drop' : '')
@@ -109,9 +125,9 @@ export default function AppBar({
       {visible.map((id) => (
         <button
           key={id}
-          className={`app-tab ${network === id ? 'on' : ''} ${drag?.id === id ? 'dragging' : ''} ${overClass(id)}`}
+          className={`app-tab ${network === id ? 'on' : ''} ${drag?.id === id ? 'dragging' : ''} ${detached.includes(id) ? 'detached' : ''} ${overClass(id)}`}
           onClick={() => onSelect(network === id ? 'all' : id)}
-          title={APPS[id].name}
+          title={detached.includes(id) ? `${APPS[id].name} (in its own window)` : APPS[id].name}
           aria-label={APPS[id].name}
           aria-pressed={network === id}
           {...dragProps(id)}

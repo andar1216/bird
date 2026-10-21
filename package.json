@@ -18,7 +18,7 @@
     "db": "npm --prefix server run db",
     "server": "npm --prefix server run dev",
     "server:test": "npm --prefix server test",
-    "test": "node --test electron/usage.test.cjs electron/inbox.test.cjs electron/pagechats.test.cjs src/hiddenChats.test.js src/chatPrefs.test.js src/customApps.test.js electron/networks.test.cjs src/usageStats.test.js src/theme.test.js"
+    "test": "node --test electron/usage.test.cjs electron/inbox.test.cjs electron/pagechats.test.cjs src/hiddenChats.test.js src/chatPrefs.test.js src/customApps.test.js electron/networks.test.cjs electron/customizations.test.cjs src/usageStats.test.js src/theme.test.js"
   },
   "dependencies": {
     "react": "^19.3.1",

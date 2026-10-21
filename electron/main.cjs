@@ -1,6 +1,6 @@
 const fs = require('node:fs')
 const path = require('node:path')
-const { app, BrowserWindow, WebContentsView, ipcMain, powerMonitor, session, shell } = require('electron')
+const { app, BrowserWindow, WebContentsView, ipcMain, powerMonitor, screen, session, shell } = require('electron')
 const { NETWORKS, ALLOWED_PERMISSIONS, isAllowedUrl, parseBadge, setCustomNetworks } = require('./networks.cjs')
 const custom = require('./customizations.cjs')
 const { createUsageTracker } = require('./usage.cjs')
@@ -112,8 +112,35 @@ function lockDownSession(networkId, ses) {
     permitted(wc, permission, requestingOrigin),
   )
   keepSessionCookies(ses)
+  googleSignInHeaders(ses)
 }
 
+// Google refuses to sign you in ("This browser or app may not be secure") when the
+// browser looks embedded. Ferdium's fix, which holds up: on accounts.google.com the
+// browser identifies as plain "Chrome", with no version number. This covers the
+// requests; `forGoogleSignIn` below makes the page's own navigator.userAgent match.
+const GOOGLE_SIGN_IN = /^https:\/\/accounts\.google\.com\//i
+const chromeless = (ua) => ua.replace(/Chrome\/[\d.]+/, 'Chrome')
+const googleHeaderSessions = new WeakSet()
+
+function googleSignInHeaders(ses) {
+  if (googleHeaderSessions.has(ses)) return
+  googleHeaderSessions.add(ses)
+  const ua = chromeless(browserUserAgent())
+  ses.webRequest.onBeforeSendHeaders({ urls: ['https://accounts.google.com/*'] }, (details, callback) => {
+    callback({ requestHeaders: { ...details.requestHeaders, 'User-Agent': ua } })
+  })
+}
+
+// Keep a page's user agent in step with where it is (not changed while a page is
+// still loading: that would cancel the navigation).
+function forGoogleSignIn(wc) {
+  const normal = browserUserAgent()
+  wc.on('did-navigate', (_event, url) => {
+    const want = GOOGLE_SIGN_IN.test(url) ? chromeless(normal) : normal
+    if (wc.getUserAgent() !== want) wc.setUserAgent(want)
+  })
+}
 // Cookies without an expiry are "session cookies": Chromium throws them away
 // whenever the app closes, which signs you out of any site that keeps its login
 // in one. Give them a 90-day expiry so they survive restarts, like "remember me".
@@ -190,6 +217,7 @@ function createNetworkView(id) {
   })
   const wc = view.webContents
   wc.setUserAgent(browserUserAgent())
+  forGoogleSignIn(wc)
 
   // Stay on this network's domains; send everything else to the browser.
   wc.setWindowOpenHandler(({ url }) => {
@@ -464,7 +492,15 @@ function trackUsage() {
   if (!usage) return
   const inFront = win && !win.isDestroyed() && win.isVisible() && !win.isMinimized() && win.isFocused()
   const idle = powerMonitor.getSystemIdleTime() >= IDLE_AFTER_S
-  usage.set(inFront && !idle && currentUserId && activeId ? { u: currentUserId, a: activeId } : null)
+  // The app on screen: the one open in Bird's window, or one in its own window that is in front.
+  let shown = inFront && activeId && !views.get(activeId)?.detachedWin ? activeId : null
+  if (!shown) {
+    for (const [id, e] of views) {
+      const w = e.detachedWin
+      if (w && !w.isDestroyed() && w.isVisible() && !w.isMinimized() && w.isFocused()) shown = id
+    }
+  }
+  usage.set(!idle && currentUserId && shown ? { u: currentUserId, a: shown } : null)
   // Bird itself counts as open while its window is up, even behind other windows.
   const up = win && !win.isDestroyed() && win.isVisible() && !win.isMinimized()
   usage.setBirdOpen(up && currentUserId ? { u: currentUserId } : null)
@@ -477,7 +513,9 @@ const NOTIFY_MARKER = `__bird_${Math.random().toString(36).slice(2)}__:`
 let inbox = null // created once the app is ready
 let inboxSaveTimer = null
 
-const onScreen = (id) => id === activeId && win && !win.isDestroyed() && win.isFocused()
+const onScreen = (id) =>
+  (id === activeId && win && !win.isDestroyed() && win.isFocused()) ||
+  views.get(id)?.detachedWin?.isFocused() === true
 
 // Conversations read from apps' own pages (see pagechats.cjs), by app. For an app
 // with page conversations those replace its notification entries, as they're fuller.
@@ -557,9 +595,15 @@ function closeView(id) {
   listed.delete(id)
   listingStart.delete(id)
   if (!entry.view.webContents.isDestroyed()) entry.view.webContents.session.flushStorageData()
-  if (win && !win.isDestroyed()) win.contentView.removeChildView(entry.view)
+  const pop = entry.detachedWin
+  entry.detachedWin = null
+  if (pop && !pop.isDestroyed()) {
+    pop.contentView.removeChildView(entry.view)
+    pop.destroy()
+  } else if (win && !win.isDestroyed()) win.contentView.removeChildView(entry.view)
   if (!entry.view.webContents.isDestroyed()) entry.view.webContents.close()
   views.delete(id)
+  if (pop) sendDetached()
 }
 
 // Apps are loaded in the background (hidden) as soon as they are on the app bar,
@@ -572,8 +616,8 @@ function syncBackground() {
   clearTimeout(backgroundTimer)
   backgroundTimer = null
   if (!currentUserId || !win || win.isDestroyed()) return
-  for (const id of [...views.keys()]) {
-    if (!backgroundApps.includes(id) && id !== activeId) closeView(id)
+  for (const [id, entry] of [...views]) {
+    if (!backgroundApps.includes(id) && id !== activeId && !entry.detachedWin) closeView(id)
   }
   const openNext = () => {
     backgroundTimer = null
@@ -599,12 +643,18 @@ function destroyViews() {
   for (const entry of views.values()) {
     const { view } = entry
     disposeReader(entry)
-    if (win && !win.isDestroyed()) win.contentView.removeChildView(view)
+    const pop = entry.detachedWin
+    entry.detachedWin = null
+    if (pop && !pop.isDestroyed()) {
+      pop.contentView.removeChildView(view)
+      pop.destroy()
+    } else if (win && !win.isDestroyed()) win.contentView.removeChildView(view)
     if (!view.webContents.isDestroyed()) view.webContents.close()
   }
   views.clear()
   activeId = null
   sendToUI('bird:status', statusSnapshot())
+  sendDetached()
 }
 
 // Called when someone signs in (id) or out (null). Closes every open web view;
@@ -622,7 +672,7 @@ function setUser(id) {
 function showNetwork(id) {
   // No account, no apps.
   activeId = currentUserId && id && NETWORKS[id] ? id : null
-  for (const [viewId, entry] of views) entry.view.setVisible(viewId === activeId)
+  for (const [viewId, entry] of views) entry.view.setVisible(viewId === activeId || Boolean(entry.detachedWin))
   if (activeId) {
     const entry = views.get(activeId) ?? createNetworkView(activeId)
     // You opened it: it may now use passkeys (they are refused while it runs unseen).
@@ -630,8 +680,15 @@ function showNetwork(id) {
       entry.opened = true
       entry.view.webContents.executeJavaScript('window.__birdPasskeys = true').catch(() => {})
     }
-    applyBounds(entry.view)
-    entry.view.setVisible(true)
+    const pop = entry.detachedWin
+    if (pop && !pop.isDestroyed()) {
+      // The app lives in a window of its own: bring that one forward.
+      if (pop.isMinimized()) pop.restore()
+      pop.focus()
+    } else {
+      applyBounds(entry.view)
+      entry.view.setVisible(true)
+    }
     // Opening an app means you're seeing its messages: they no longer count as unread.
     if (inbox?.markAppRead(currentUserId, activeId)) {
       sendInbox()
@@ -639,9 +696,97 @@ function showNetwork(id) {
     }
   }
   // An app taken off the bar stops running in the background once you leave it.
-  for (const viewId of [...views.keys()]) {
-    if (viewId !== activeId && !backgroundApps.includes(viewId)) closeView(viewId)
+  for (const [viewId, entry] of [...views]) {
+    if (viewId !== activeId && !backgroundApps.includes(viewId) && !entry.detachedWin) closeView(viewId)
   }
+  trackUsage()
+}
+
+// ------------------------------------------------------- apps in their own window
+// Drag an app's icon out of Bird and the app moves into a window of its own. It is
+// the same web view (same login, same background reading), shown in another window;
+// closing that window puts the app back in Bird.
+const detachedIds = () => [...views].filter(([, e]) => e.detachedWin).map(([id]) => id)
+const sendDetached = () => sendToUI('bird:detached', detachedIds())
+
+function fitDetached(entry) {
+  const pop = entry.detachedWin
+  if (!pop || pop.isDestroyed() || entry.view.webContents.isDestroyed()) return
+  const { width, height } = pop.getContentBounds()
+  entry.view.setBounds({ x: 0, y: 0, width, height })
+}
+
+// The window is closing: hand the app back to Bird's window.
+function reattach(id, entry) {
+  const pop = entry.detachedWin
+  entry.detachedWin = null
+  if (views.get(id) !== entry || entry.view.webContents.isDestroyed()) return sendDetached()
+  if (pop && !pop.isDestroyed()) pop.contentView.removeChildView(entry.view)
+  if (win && !win.isDestroyed()) {
+    win.contentView.addChildView(entry.view)
+    entry.view.setVisible(id === activeId)
+    if (id === activeId) applyBounds(entry.view)
+    else entry.view.setBounds({ x: 0, y: 0, width: 1000, height: 700 }) // a normal size while hidden
+  }
+  // An app that is neither on the bar nor shown stops running in the background.
+  if (id !== activeId && !backgroundApps.includes(id)) closeView(id)
+  sendDetached()
+  trackUsage()
+}
+
+function detachApp(id, point) {
+  if (!currentUserId || !win || win.isDestroyed() || typeof id !== 'string' || !NETWORKS[id]) return
+  const open = views.get(id)?.detachedWin
+  if (open && !open.isDestroyed()) {
+    if (open.isMinimized()) open.restore()
+    open.focus()
+    return
+  }
+  const entry = views.get(id) ?? createNetworkView(id)
+  const at = point && Number.isFinite(point.x) && Number.isFinite(point.y) ? point : null
+  const area = screen.getDisplayNearestPoint(at ?? screen.getCursorScreenPoint()).workArea
+  const width = Math.min(1000, area.width)
+  const height = Math.min(760, area.height)
+  const place = at
+    ? {
+        // Centred under where it was dropped, but always on screen.
+        x: Math.min(Math.max(area.x, Math.round(at.x - width / 2)), area.x + area.width - width),
+        y: Math.min(Math.max(area.y, Math.round(at.y - 24)), area.y + area.height - height),
+      }
+    : {}
+  const pop = new BrowserWindow({
+    icon: ICON,
+    title: NETWORKS[id].name,
+    width,
+    height,
+    minWidth: Math.min(420, width),
+    minHeight: Math.min(360, height),
+    ...place,
+    backgroundColor: '#14121d',
+    autoHideMenuBar: true,
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  })
+  pop.setMenuBarVisibility(false)
+  pop.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.contentView.removeChildView(entry.view)
+  entry.detachedWin = pop
+  pop.contentView.addChildView(entry.view)
+  entry.view.setVisible(true)
+  fitDetached(entry)
+  // Opening an app means you're seeing it: passkeys are allowed, messages count as read.
+  if (!entry.opened) {
+    entry.opened = true
+    entry.view.webContents.executeJavaScript('window.__birdPasskeys = true').catch(() => {})
+  }
+  if (inbox?.markAppRead(currentUserId, id)) {
+    sendInbox()
+    scheduleInboxSave()
+  }
+  pop.on('resize', () => fitDetached(entry))
+  pop.on('show', () => fitDetached(entry))
+  for (const event of ['focus', 'blur', 'show', 'hide', 'minimize', 'restore']) pop.on(event, trackUsage)
+  pop.on('close', () => reattach(id, entry))
+  sendDetached()
   trackUsage()
 }
 
@@ -712,6 +857,12 @@ function createWindow() {
     for (const entry of views.values()) {
       const { view } = entry
       disposeReader(entry)
+      const pop = entry.detachedWin
+      entry.detachedWin = null
+      if (pop && !pop.isDestroyed()) {
+        pop.contentView.removeChildView(view)
+        pop.destroy() // closing Bird closes the windows it opened
+      }
       if (!view.webContents.isDestroyed()) view.webContents.close()
     }
     views.clear()
@@ -866,8 +1017,17 @@ ipcMain.on('bird:set-bounds', (_event, rect) => {
   if (!rect || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)) return
   bounds = { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
   const entry = activeId && views.get(activeId)
-  if (entry) applyBounds(entry.view)
+  if (entry && !entry.detachedWin) applyBounds(entry.view)
 })
+
+// Drag an app icon out of Bird: the app opens in a window of its own (x, y: where it
+// was dropped, in screen coordinates). Closing that window, or "Bring back", returns it.
+ipcMain.on('bird:detach-app', (_event, id, x, y) => detachApp(id, { x, y }))
+ipcMain.on('bird:attach-app', (_event, id) => {
+  const pop = typeof id === 'string' ? views.get(id)?.detachedWin : null
+  if (pop && !pop.isDestroyed()) pop.close()
+})
+ipcMain.handle('bird:get-detached', () => detachedIds())
 
 ipcMain.handle('bird:get-status', () => statusSnapshot())
 ipcMain.handle('bird:get-listing', () => listingIds())
@@ -931,10 +1091,10 @@ ipcMain.on('bird:record-open', (_event, appId, via) => {
 })
 
 // Customize panel: what can be tweaked, what is on for this account, and changes.
-ipcMain.handle('bird:get-customizations', () => custom.describeAll())
+ipcMain.handle('bird:get-customizations', () => custom.describeAll(Object.keys(NETWORKS)))
 
 ipcMain.handle('bird:get-app-prefs', (_event, networkId) =>
-  currentUserId && NETWORKS[networkId] ? { ...prefsFor(networkId) } : {},
+  currentUserId && NETWORKS[networkId] ? custom.effective(networkId, prefsFor(networkId)) : {},
 )
 
 ipcMain.on('bird:set-app-pref', (_event, networkId, optionId, value) => {
@@ -942,8 +1102,10 @@ ipcMain.on('bird:set-app-pref', (_event, networkId, optionId, value) => {
   if (typeof value !== 'boolean') return
   const mine = (allPrefs[currentUserId] ??= {})
   const forNetwork = (mine[networkId] ??= {})
-  if (value) forNetwork[optionId] = true
-  else delete forNetwork[optionId]
+  // Only a choice that differs from the option's default is kept.
+  const keep = custom.stored(networkId, optionId, value)
+  if (keep === undefined) delete forNetwork[optionId]
+  else forNetwork[optionId] = keep
   savePrefs()
   // Show the change right away in an app that is already open.
   applyCss(networkId)

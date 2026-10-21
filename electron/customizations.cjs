@@ -6,6 +6,8 @@
 //     often than a site's markup.
 // Tweaks that depend on a site's page layout can stop working when it changes.
 
+// An option may be `defaultOn`: it applies until the user switches it off.
+
 const INSTAGRAM_HOME = 'https://www.instagram.com/'
 const INSTAGRAM_FOLLOWING = `${INSTAGRAM_HOME}?variant=following`
 
@@ -40,6 +42,56 @@ const CUSTOMIZATIONS = {
   },
 }
 
+// Shorts: the shelves and menu entries, any video card that links to a Short, and the
+// Shorts tab on channels.
+const YOUTUBE_SHORTS_CSS = [
+  'ytd-reel-shelf-renderer',
+  'ytd-rich-shelf-renderer[is-shorts]',
+  'ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts])',
+  // The menu entries (the narrow one on the home page has the label on its link).
+  'ytd-guide-entry-renderer:has(a[href^="/shorts"])',
+  'ytd-guide-entry-renderer:has(a[title="Shorts"])',
+  'ytd-mini-guide-entry-renderer:has(a[href^="/shorts"])',
+  'ytd-mini-guide-entry-renderer:has(a[title="Shorts"])',
+  'ytd-mini-guide-entry-renderer:has(a[aria-label="Shorts"])',
+  'yt-tab-shape[tab-title="Shorts"]',
+  'tp-yt-paper-tab:has(> .tab-content[title="Shorts"])',
+  'yt-chip-cloud-chip-renderer:has(a[href^="/shorts"])',
+  'ytd-video-renderer:has(a[href^="/shorts/"])',
+  'ytd-grid-video-renderer:has(a[href^="/shorts/"])',
+  'ytd-rich-item-renderer:has(a[href^="/shorts/"])',
+  'ytd-compact-video-renderer:has(a[href^="/shorts/"])',
+  'yt-lockup-view-model:has(a[href^="/shorts/"])',
+  'ytm-shorts-lockup-view-model',
+].join(',\n') + ' { display: none !important; }'
+
+CUSTOMIZATIONS.youtube = {
+  options: [
+    {
+      id: 'hideShorts',
+      label: 'Hide Shorts',
+      description: 'Removes Shorts from the menu, the feed, search and channels. Shorts pages do not open.',
+      defaultOn: true,
+      css: YOUTUBE_SHORTS_CSS,
+      // The Shorts feed, any single Short, and a channel's Shorts tab.
+      block: (u) =>
+        /^\/shorts(\/|$)/.test(u.pathname) ||
+        /^\/(@[^/]+|channel\/[^/]+|c\/[^/]+|user\/[^/]+)\/shorts\/?$/.test(u.pathname),
+    },
+  ],
+}
+
+// The set of tweaks that applies to an app. YouTube is added by the user as an app of
+// its own (id like "custom-youtube-com"), so it is recognised by that id.
+function keyOf(networkId) {
+  if (CUSTOMIZATIONS[networkId]) return networkId
+  if (/^custom-(www-|m-)?youtube-com$/.test(String(networkId))) return 'youtube'
+  return null
+}
+
+const optionsOf = (networkId) => CUSTOMIZATIONS[keyOf(networkId)]?.options ?? []
+const isOn = (o, prefs) => (typeof prefs?.[o.id] === 'boolean' ? prefs[o.id] : o.defaultOn === true)
+
 function parse(rawUrl) {
   try {
     return new URL(rawUrl)
@@ -49,21 +101,32 @@ function parse(rawUrl) {
 }
 
 function active(networkId, prefs) {
-  const options = CUSTOMIZATIONS[networkId]?.options ?? []
-  return options.filter((o) => prefs?.[o.id] === true)
+  return optionsOf(networkId).filter((o) => isOn(o, prefs))
 }
 
-/** What the UI may show: { [networkId]: [{ id, label, description }] }. */
-function describeAll() {
+/** What the UI may show: { [networkId]: [{ id, label, description }] }, for the apps given. */
+function describeAll(networkIds = []) {
   const out = {}
-  for (const [networkId, { options }] of Object.entries(CUSTOMIZATIONS)) {
-    out[networkId] = options.map(({ id, label, description }) => ({ id, label, description }))
+  for (const networkId of new Set([...Object.keys(CUSTOMIZATIONS), ...networkIds])) {
+    const options = optionsOf(networkId)
+    if (options.length) out[networkId] = options.map(({ id, label, description }) => ({ id, label, description }))
   }
   return out
 }
 
 function hasOption(networkId, optionId) {
-  return (CUSTOMIZATIONS[networkId]?.options ?? []).some((o) => o.id === optionId)
+  return optionsOf(networkId).some((o) => o.id === optionId)
+}
+
+/** Every option's current on/off for an app, counting what is on by default. */
+function effective(networkId, prefs) {
+  return Object.fromEntries(optionsOf(networkId).map((o) => [o.id, isOn(o, prefs)]))
+}
+
+/** What to keep in the saved prefs: nothing when the value is the option's default. */
+function stored(networkId, optionId, value) {
+  const o = optionsOf(networkId).find((x) => x.id === optionId)
+  return o && value === (o.defaultOn === true) ? undefined : value
 }
 
 function buildCss(networkId, prefs) {
@@ -95,4 +158,4 @@ function startUrl(networkId, prefs) {
   return active(networkId, prefs).find((o) => o.start)?.start ?? null
 }
 
-module.exports = { describeAll, hasOption, buildCss, isBlocked, rewriteUrl, startUrl }
+module.exports = { describeAll, hasOption, effective, stored, buildCss, isBlocked, rewriteUrl, startUrl }

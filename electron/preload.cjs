@@ -25,6 +25,11 @@ contextBridge.exposeInMainWorld('bird', {
   setCustomApps: (list) => ipcRenderer.send('bird:set-custom-apps', list),
   unlinkApp: (id) => ipcRenderer.invoke('bird:unlink-app', id),
   setBackgroundApps: (ids) => ipcRenderer.send('bird:set-background-apps', ids),
+  // An app can open in a window of its own (drag its icon out of the bar).
+  detachApp: (id, x, y) => ipcRenderer.send('bird:detach-app', id, x, y),
+  attachApp: (id) => ipcRenderer.send('bird:attach-app', id),
+  getDetached: () => ipcRenderer.invoke('bird:get-detached'),
+  onDetached: (cb) => subscribe('bird:detached', cb),
   // Rectangle (CSS px, window-relative) where the web view should be drawn.
   setBounds: (rect) => ipcRenderer.send('bird:set-bounds', rect),
   // { [networkId]: { count, dot } } for networks that have been opened.
