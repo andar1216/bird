@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import NetworkIcon from './NetworkIcon'
 import { APPS } from '../data'
-import { LIMIT_CHOICES } from '../useApps'
 import { addressFromQuery, hostOf, makeCustom, searchSuggestions } from '../customApps'
 
 // The "+" button after the app icons: every app Bird knows, each with a
@@ -23,12 +22,35 @@ export default function AppsMenu({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const ref = useRef(null)
+  const btnRef = useRef(null)
+  // Where the menu sits: under its button, always inside the window.
+  const [place, setPlace] = useState(null)
 
   // Let the parent hide the native web view, which would draw over this menu.
   useEffect(() => {
     onOpenChange?.(open)
     return () => onOpenChange?.(false)
   }, [open, onOpenChange])
+
+  useEffect(() => {
+    if (!open) return undefined
+    const MARGIN = 12
+    const fit = () => {
+      const r = btnRef.current?.getBoundingClientRect()
+      if (!r) return
+      const width = Math.min(480, window.innerWidth - 2 * MARGIN)
+      const top = r.bottom + 10
+      setPlace({
+        top,
+        width,
+        left: Math.max(MARGIN, Math.min(r.left, window.innerWidth - width - MARGIN)),
+        maxHeight: Math.max(220, window.innerHeight - top - MARGIN),
+      })
+    }
+    fit()
+    window.addEventListener('resize', fit)
+    return () => window.removeEventListener('resize', fit)
+  }, [open])
 
   useEffect(() => {
     if (!open) return undefined
@@ -68,6 +90,7 @@ export default function AppsMenu({
   return (
     <div ref={ref} className="apps-menu-wrap">
       <button
+        ref={btnRef}
         className={`app-tab app-tab-plain ${open ? 'on' : ''}`}
         onClick={() => setOpen((o) => !o)}
         title="Apps"
@@ -80,7 +103,7 @@ export default function AppsMenu({
       </button>
 
       {open && (
-        <div className="apps-menu" role="dialog" aria-label="Apps">
+        <div className="apps-menu" role="dialog" aria-label="Apps" style={place ?? { visibility: 'hidden' }}>
           <h3>Apps in the top bar</h3>
           <input
             className="apps-search"
@@ -96,19 +119,39 @@ export default function AppsMenu({
           />
           {!q && (
             <>
-              <div className="apps-limit" role="group" aria-label="How many apps to show">
-                <span>Show</span>
-                {LIMIT_CHOICES.map((n) => (
+              <div className="apps-limit">
+                <label htmlFor="apps-limit-input">Show</label>
+                <span className="stepper">
                   <button
-                    key={n ?? 'all'}
-                    className={`pill ${limit === n ? 'on' : ''}`}
-                    onClick={() => onLimit(n)}
+                    type="button"
+                    aria-label="Show one fewer app"
+                    onClick={() => onLimit(Math.max(1, (limit ?? shown.length) - 1))}
                   >
-                    {n ?? 'All'}
+                    −
                   </button>
-                ))}
-              </div>
-              <p className="apps-hint">The rest go under More. Drag icons in the bar to reorder.</p>
+                  <input
+                    id="apps-limit-input"
+                    type="number"
+                    inputMode="numeric"
+                    min="1"
+                    max="99"
+                    placeholder="All"
+                    value={limit ?? ''}
+                    onChange={(e) => {
+                      const n = parseInt(e.target.value, 10)
+                      onLimit(Number.isFinite(n) ? Math.min(99, Math.max(1, n)) : null)
+                    }}
+                  />
+                  <button
+                    type="button"
+                    aria-label="Show one more app"
+                    onClick={() => limit !== null && onLimit(limit + 1)}
+                  >
+                    +
+                  </button>
+                </span>
+                <span className="apps-limit-note">apps on the bar. Leave it blank for all.</span>
+              </div>              <p className="apps-hint">The rest go under More. Drag icons in the bar to reorder, or drag one out of the window to open it on its own.</p>
             </>
           )}
           <div className="apps-cols" aria-hidden="true">
