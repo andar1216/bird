@@ -22,7 +22,7 @@ export default function ProfileMenu({
   onOpenMatrix,
 }) {
   const [open, setOpen] = useState(false)
-  const { defaultOn, toggleDefault } = useGray()
+  const { defaultOn, toggleDefault, chatsGray, toggleChats } = useGray()
   const ref = useRef(null)
   const dark = theme === 'dark'
 
@@ -101,6 +101,19 @@ export default function ProfileMenu({
               <span className={`switch ${defaultOn(kind) ? 'on' : ''}`} aria-hidden="true" />
             </button>
           ))}
+          <button
+            className="menu-item"
+            role="menuitemcheckbox"
+            aria-checked={chatsGray}
+            onClick={toggleChats}
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.800" />
+              <path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" />
+            </svg>
+            <span className="menu-label">Grayscale All Chats</span>
+            <span className={`switch ${chatsGray ? 'on' : ''}`} aria-hidden="true" />
+          </button>
           <div className="menu-sep" />
 
           <button

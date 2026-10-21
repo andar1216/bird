@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { withNick, withStar } from './chatPrefs'
+import { withMute, withNick, withStar } from './chatPrefs'
 
 const storageKey = (userId) => `bird.chatPrefs.${userId}`
 
@@ -30,6 +30,10 @@ export function useChatPrefs(userId) {
     [],
   )
   const rename = useCallback((id, nick) => setPrefs((cur) => withNick(cur, id, nick)), [])
+  const toggleMute = useCallback(
+    (id) => setPrefs((cur) => withMute(cur, id, cur[id]?.mute !== true)),
+    [],
+  )
 
-  return { prefs, toggleStar, rename }
+  return { prefs, toggleStar, rename, toggleMute }
 }

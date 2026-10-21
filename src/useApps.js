@@ -22,7 +22,11 @@ function load(userId) {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey(userId)))
     if (saved && Array.isArray(saved.order)) {
-      return { order: clean(saved.order), limit: validLimit(saved.limit) }
+      return {
+        order: clean(saved.order),
+        limit: validLimit(saved.limit),
+        quiet: clean(Array.isArray(saved.quiet) ? saved.quiet : []),
+      }
     }
   } catch {
     /* fall through to the defaults */
@@ -34,7 +38,7 @@ function load(userId) {
   } catch {
     /* ignore */
   }
-  return { order: clean([...NETWORK_ORDER, ...extra]), limit: DEFAULT_LIMIT }
+  return { order: clean([...NETWORK_ORDER, ...extra]), limit: DEFAULT_LIMIT, quiet: [] }
 }
 
 // Apps this account added itself, kept next to the bar settings.
@@ -61,7 +65,9 @@ export function useApps(userId) {
     return list
   })
   const [state, setState] = useState(() => load(userId))
-  const { order, limit } = state
+  // quiet = apps whose icon you took off the bar. Their chats can still show in All
+  // Chats, which needs the app itself to keep running in the background.
+  const { order, limit, quiet } = state
 
   // Tell the desktop shell which sites the added apps may open (before the bar's apps load).
   useEffect(() => {
@@ -83,11 +89,20 @@ export function useApps(userId) {
 
   const show = useCallback(
     (id) =>
-      setState((s) => (APPS[id] && !s.order.includes(id) ? { ...s, order: [...s.order, id] } : s)),
+      setState((s) =>
+        APPS[id] && !s.order.includes(id)
+          ? { ...s, order: [...s.order, id], quiet: s.quiet.filter((x) => x !== id) }
+          : s,
+      ),
     [],
   )
   const hide = useCallback(
-    (id) => setState((s) => ({ ...s, order: s.order.filter((x) => x !== id) })),
+    (id) =>
+      setState((s) => ({
+        ...s,
+        order: s.order.filter((x) => x !== id),
+        quiet: s.order.includes(id) && !s.quiet.includes(id) ? [...s.quiet, id] : s.quiet,
+      })),
     [],
   )
   // Put `id` where `targetId` is (or last, when targetId is null).
@@ -114,7 +129,11 @@ export function useApps(userId) {
       registerCustomApps(next)
       return next
     })
-    setState((s) => (s.order.includes(app.id) ? s : { ...s, order: [...s.order, app.id] }))
+    setState((s) =>
+      s.order.includes(app.id)
+        ? s
+        : { ...s, order: [...s.order, app.id], quiet: s.quiet.filter((x) => x !== app.id) },
+    )
     return app.id
   }, [])
   // Forget an added app (its login is wiped by the caller).
@@ -124,8 +143,8 @@ export function useApps(userId) {
       registerCustomApps(next)
       return next
     })
-    setState((s) => ({ ...s, order: s.order.filter((x) => x !== id) }))
+    setState((s) => ({ ...s, order: s.order.filter((x) => x !== id), quiet: s.quiet.filter((x) => x !== id) }))
   }, [])
 
-  return { apps: order, limit, custom, show, hide, move, setLimit, addCustom, removeCustom }
+  return { apps: order, quiet, limit, custom, show, hide, move, setLimit, addCustom, removeCustom }
 }

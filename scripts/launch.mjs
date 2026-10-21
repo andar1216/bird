@@ -16,6 +16,7 @@ import net from 'node:net'
 import { dirname, join, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
+import { brandElectron } from './brand-electron.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const serverDir = join(root, 'server')
@@ -102,8 +103,9 @@ let electron = null
 let restarting = false
 let shuttingDown = false
 
-function launchElectron() {
+async function launchElectron() {
   rmSync(QUIT_FILE, { force: true }) // forget any stale quit request
+  await brandElectron(log) // the Bird icon on the program (a no-op once done)
   const out = createWriteStream(join(logDir, 'electron.log'), { flags: 'a' })
   electron = spawn(electronPath, ['.'], {
     cwd: root,

@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('bird', {
   // Screen time: this account's visits since `since` (ms) as
   // { now, segments: [{ app, start, end, live }], active: { app, start } | null }.
   getUsage: (since) => ipcRenderer.invoke('bird:get-usage', since),
+  recordOpen: (appId, via) => ipcRenderer.send('bird:record-open', appId, via),
   // Conversations seen through the apps' notifications:
   // [{ app, key, name, preview, at, unread }], newest first.
   getInbox: () => ipcRenderer.invoke('bird:get-inbox'),

@@ -24,12 +24,13 @@ function matchesFilter(c, filter) {
   switch (filter) {
     case 'unread':
       return c.unread > 0 && !c.archived
-    case 'low':
-      return c.lowPriority && !c.archived
+    // High Priority: unread messages from the people you starred.
+    case 'priority':
+      return c.starred === true && c.unread > 0 && !c.archived
     case 'archive':
       return c.archived
     default:
-      return !c.archived && !c.lowPriority
+      return !c.archived
   }
 }
 
@@ -74,11 +75,18 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
     return () => bird?.setUser(null)
   }, [user.id])
 
+  // Which apps All Chats includes (all of them down to none).
+  const scope = useAllChatsScope(user.id)
+
   // Keep the apps on the bar running in the background so their notifications
-  // (and unread counts) arrive even before you open them.
+  // (and unread counts) arrive even before you open them. So do apps whose icon you
+  // took off the bar while their chats still show in All Chats.
+  const { quiet } = appList
+  const { isShown } = scope
+  const background = useMemo(() => [...apps, ...quiet.filter(isShown)], [apps, quiet, isShown])
   useEffect(() => {
-    bird?.setBackgroundApps?.(apps)
-  }, [apps, user.id])
+    bird?.setBackgroundApps?.(background)
+  }, [background, user.id])
 
   useEffect(() => {
     bird?.selectNetwork(appOpen && !menuOpen && !panel ? network : null)
@@ -100,6 +108,13 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
     setNetwork(id)
     setAppOpen(id !== 'all')
     setPanel(null)
+  }
+
+  // Open an app, counting it for screen time: from its icon ("app") or through one of
+  // its conversations ("chat").
+  const openApp = (id, via) => {
+    bird?.recordOpen?.(id, via)
+    selectNetwork(id)
   }
 
   // A rejected token means the session is gone: go back to the sign-in screen.
@@ -202,8 +217,6 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
     [chats, appChats, chatPrefs.prefs],
   )
 
-  // Which apps All Chats includes (all of them down to none).
-  const scope = useAllChatsScope(user.id)
   const conversations = useConversationLimit(user.id)
   const list = useListHidden(user.id)
   const listing = useListing()
@@ -216,7 +229,7 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   const openFromApp = (chat) => {
     bird?.markInboxRead(chat.id.slice(INBOX_PREFIX.length))
     if (chat.page) bird?.openAppChat?.(chat.network, chat.id.slice(INBOX_PREFIX.length))
-    selectNetwork(chat.network)
+    openApp(chat.network, 'chat')
   }
 
   // Conversations hidden from All Chats until something new happens in them.
@@ -233,13 +246,14 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
         // Inside an app, the list is just that app's conversations (by name).
         if (!inAll) return c.network === network && matchesFilter(c, filter)
         if (!scope.isShown(c.network)) return false
-        if (hiding.hidden.has(c.id)) return filter === 'archive'
+        // Hidden (until something new) and muted (until unmuted) chats live in the Archive.
+        if (hiding.hidden.has(c.id) || c.mutedInAll) return filter === 'archive'
         return matchesFilter(c, filter)
       })
       .sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt))
   }, [everyChat, filter, network, query, scope, hiding.hidden])
   const pinnable = useMemo(
-    () => inScope.filter((c) => !hiding.hidden.has(c.id)),
+    () => inScope.filter((c) => !hiding.hidden.has(c.id) && !c.mutedInAll),
     [inScope, hiding.hidden],
   )
 
@@ -330,18 +344,18 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
         limit: appList.limit,
         network,
         status: appStatus,
-        onSelect: selectNetwork,
+        // Icon clicks that open an app are counted for screen time (going home isn't).
+        onSelect: (id) => (id === 'all' ? selectNetwork(id) : openApp(id, 'app')),
         onMove: appList.move,
-        // Showing or hiding an app on the bar does the same for its chats in All Chats.
-        onShow: (id) => {
-          appList.show(id)
-          scope.setShown([id], true)
-        },
+        // The icon and the chats are separate: hiding an icon leaves the app's chats in
+        // All Chats (its own switch in the apps menu turns those off).
+        onShow: appList.show,
         onHide: (id) => {
           appList.hide(id)
-          scope.setShown([id], false)
           if (network === id) selectNetwork('all')
         },
+        isInAll: scope.isShown,
+        onToggleInAll: scope.toggle,
         onLimit: appList.setLimit,
         custom: appList.custom,
         // A site added by name or address: put it on the bar, in All Chats, and open it.
@@ -362,7 +376,7 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
       }}
       onMenuOpenChange={setMenuOpen}
     />
-    <div className={`shell ${mobileChatOpen ? 'show-chat' : ''} ${list.hidden ? 'list-hidden' : ''}`}>
+    <div className={`shell ${mobileChatOpen ? 'show-chat' : ''} ${list.hidden ? 'list-hidden' : ''} ${gray.chatsGray && network === 'all' ? 'gray-chats' : ''}`}>
       <Sidebar
         chats={visible}
         allChats={pinnable}
@@ -370,12 +384,12 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
         hiddenIds={hiding.hidden}
         onHide={hiding.hide}
         onToggleStar={chatPrefs.toggleStar}
+        onToggleMute={chatPrefs.toggleMute}
         onRename={chatPrefs.rename}
         onUnhide={hiding.unhide}
         scope={scope}
         scopeOptions={scopeOptions}
         activeId={activeId}
-        onClearAppChats={appChats.length ? () => bird?.clearInbox() : undefined}
         onSelect={(id) => {
           const fromApp = appChats.find((c) => c.id === id)
           if (fromApp) return openFromApp(fromApp)

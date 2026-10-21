@@ -4,11 +4,19 @@ const { app, BrowserWindow, WebContentsView, ipcMain, powerMonitor, session, she
 const { NETWORKS, ALLOWED_PERMISSIONS, isAllowedUrl, parseBadge, setCustomNetworks } = require('./networks.cjs')
 const custom = require('./customizations.cjs')
 const { createUsageTracker } = require('./usage.cjs')
-const { createInbox, hookScript, parseReport } = require('./inbox.cjs')
+const { createInbox, hookScript, parseReport, withNoteCounts } = require('./inbox.cjs')
 const { readerFor, readerApps, normalize, limitOf, scrollScript } = require('./pagechats.cjs')
 
 const DEV_URL = process.env.BIRD_DEV_URL // set by `npm run electron:dev`
 const isDev = Boolean(DEV_URL)
+
+// One identity for Bird on Windows, so the taskbar, Start and notifications all use
+// Bird's name and icon instead of Electron's (the Start-menu shortcut made by
+// scripts/make-shortcut.ps1 carries the same id).
+const APP_ID = 'com.bird.messenger'
+const ICON = path.join(__dirname, '..', 'build', process.platform === 'win32' ? 'icon.ico' : 'icon.png')
+app.setName('Bird')
+if (process.platform === 'win32') app.setAppUserModelId(APP_ID)
 
 /** @type {BrowserWindow | null} */
 let win = null
@@ -188,6 +196,11 @@ function createNetworkView(id) {
     if (isAllowedUrl(id, url)) wc.loadURL(url)
     else openExternal(url)
     return { action: 'deny' }
+  })
+  // Pages (or frames inside them) may try to hand off to a desktop app with a link like
+  // msteams://. Never: apps are viewed in Bird only.
+  wc.on('will-frame-navigate', (event) => {
+    if (!/^(https?|about|blob|data):/i.test(event.url)) event.preventDefault()
   })
   wc.on('will-navigate', (event, url) => {
     if (!isAllowedUrl(id, url)) {
@@ -452,6 +465,9 @@ function trackUsage() {
   const inFront = win && !win.isDestroyed() && win.isVisible() && !win.isMinimized() && win.isFocused()
   const idle = powerMonitor.getSystemIdleTime() >= IDLE_AFTER_S
   usage.set(inFront && !idle && currentUserId && activeId ? { u: currentUserId, a: activeId } : null)
+  // Bird itself counts as open while its window is up, even behind other windows.
+  const up = win && !win.isDestroyed() && win.isVisible() && !win.isMinimized()
+  usage.setBirdOpen(up && currentUserId ? { u: currentUserId } : null)
 }
 
 // ------------------------------------------------------------ notifications
@@ -497,9 +513,12 @@ function sendListing() {
 function inboxList() {
   if (!currentUserId || !inbox) return []
   const covered = new Set([...pageChats].filter(([, items]) => items.length).map(([app]) => app))
-  return [...inbox.list(currentUserId).filter((x) => !covered.has(x.app)), ...[...pageChats.values()].flat()].sort(
-    (a, b) => b.at - a.at,
-  )
+  const notes = inbox.list(currentUserId)
+  // A page only says whether a conversation is unread, so its badge counts the
+  // notifications the app raised for that conversation (see withNoteCounts).
+  const { items: pages, read } = withNoteCounts([...pageChats.values()].flat(), notes)
+  if (read.some((key) => inbox.markRead(currentUserId, key))) scheduleInboxSave()
+  return [...notes.filter((x) => !covered.has(x.app)), ...pages].sort((a, b) => b.at - a.at)
 }
 
 function sendInbox() {
@@ -638,7 +657,7 @@ function focusNetwork(id) {
 // ---------------------------------------------------------------- window
 function createWindow() {
   win = new BrowserWindow({
-    icon: path.join(__dirname, '..', 'build', 'icon.png'),
+    icon: ICON,
     width: 1280,
     height: 820,
     minWidth: 900,
@@ -667,6 +686,19 @@ function createWindow() {
     }
   })
 
+  if (process.platform === 'win32') {
+    // What the taskbar shows and starts when the window is pinned: Bird, with its icon.
+    const launcher = path.join(__dirname, '..', 'scripts', 'Bird.vbs')
+    win.setAppDetails({
+      appId: APP_ID,
+      appIconPath: ICON,
+      appIconIndex: 0,
+      relaunchDisplayName: 'Bird',
+      relaunchCommand: app.isPackaged
+        ? `"${process.execPath}"`
+        : `"${path.join(process.env.WINDIR ?? 'C:\\Windows', 'System32', 'wscript.exe')}" "${launcher}"`,
+    })
+  }
   if (isDev) win.loadURL(DEV_URL)
   else win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
 
@@ -840,6 +872,28 @@ ipcMain.on('bird:set-bounds', (_event, rect) => {
 ipcMain.handle('bird:get-status', () => statusSnapshot())
 ipcMain.handle('bird:get-listing', () => listingIds())
 
+// TEMPORARY dev-only probe: logs/eval-in.txt = "<appId>\n<js>" runs in that app's page
+// (or its hidden reader page) and the JSON result lands in logs/eval-out.txt.
+if (isDev) {
+  const dir = path.join(__dirname, '..', 'logs')
+  setInterval(async () => {
+    const inFile = path.join(dir, 'eval-in.txt')
+    if (!fs.existsSync(inFile)) return
+    const text = fs.readFileSync(inFile, 'utf8')
+    fs.unlinkSync(inFile)
+    const nl = text.indexOf('\n')
+    const [id, reader] = text.slice(0, nl).trim().split(':')
+    const entry = views.get(id)
+    const wc = reader === 'reader' ? entry?.readerView?.webContents : entry?.view.webContents
+    let out
+    try {
+      out = wc ? JSON.stringify(await wc.executeJavaScript(text.slice(nl + 1)), null, 1) : 'no such page'
+    } catch (err) {
+      out = 'ERR ' + err.message
+    }
+    fs.writeFileSync(path.join(dir, 'eval-out.txt'), out ?? 'undefined')
+  }, 1500)
+}
 ipcMain.on('bird:set-grayscale', (_event, map) => {
   if (!map || typeof map !== 'object') return
   const next = {}
@@ -868,8 +922,12 @@ ipcMain.on('bird:inbox-clear', () => {
 
 // Screen time for the signed-in account: visits that ended after `since` (ms).
 ipcMain.handle('bird:get-usage', (_event, since) => {
-  if (!usage || !currentUserId) return { now: Date.now(), segments: [], active: null }
+  if (!usage || !currentUserId) return { now: Date.now(), segments: [], active: null, opens: [] }
   return usage.query(currentUserId, Number.isFinite(since) ? since : 0)
+})
+// You opened an app: from its icon (via 'app') or through one of its chats ('chat').
+ipcMain.on('bird:record-open', (_event, appId, via) => {
+  if (usage && currentUserId && typeof appId === 'string' && NETWORKS[appId]) usage.recordOpen(currentUserId, appId, via)
 })
 
 // Customize panel: what can be tweaked, what is on for this account, and changes.
@@ -935,6 +993,7 @@ if (!app.requestSingleInstanceLock()) {
     app.on('before-quit', () => {
       flushAllStorage()
       usage.set(null)
+      usage.setBirdOpen(null)
       usage.save()
       inbox.save()
     })

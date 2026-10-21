@@ -1,14 +1,13 @@
 import { useState } from 'react'
 import Avatar from './Avatar'
-import ScopeMenu from './ScopeMenu'
-import { ComposeIcon, MuteIcon, SearchIcon } from './Icons'
+import { MuteIcon, SearchIcon } from './Icons'
 import { APPS } from '../data'
 import { NICK_MAX } from '../chatPrefs'
 
 const FILTERS = [
   { id: 'inbox', label: 'Inbox' },
   { id: 'unread', label: 'Unread' },
-  { id: 'low', label: 'Low Priority' },
+  { id: 'priority', label: 'High Priority' },
   { id: 'archive', label: 'Archive' },
 ]
 
@@ -67,6 +66,32 @@ const PencilIcon = () => (
   </svg>
 )
 
+const BellOffIcon = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+    <path
+      d="M3 3l18 18M8.500 4.800A6 6 0 0 1 18 10c0 3 .700 4.700 1.500 5.700M6 9c0 5-2 7-2 7h11M10 20a2 2 0 0 0 4 0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+)
+
+const BellIcon = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+    <path
+      d="M6 9a6 6 0 0 1 12 0c0 5 2 7 2 7H4s2-2 2-7zM10 20a2 2 0 0 0 4 0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+)
+
 export default function Sidebar({
   chats,
   allChats,
@@ -77,19 +102,19 @@ export default function Sidebar({
   filter,
   setFilter,
   network,
-  onClearAppChats,
   hiddenIds,
   loading,
   onHide,
   onUnhide,
   onToggleStar,
+  onToggleMute,
   onRename,
   query,
   setQuery,
 }) {
   // Starred people (from any app) and the server's pinned chats, newest first.
   const pinned = allChats
-    .filter((c) => c.starred || (c.pinned && !c.archived))
+    .filter((c) => !c.mutedInAll && (c.starred || (c.pinned && !c.archived)))
     .sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt))
   const list = chats
   // The conversation whose nickname is being typed.
@@ -129,7 +154,9 @@ export default function Sidebar({
                 {c.name}
               </span>
             )}
-            {c.muted && <MuteIcon width={13} height={13} className="muted-ic" />}
+            {(c.muted || (c.mutedInAll && network !== 'all')) && (
+              <MuteIcon width={13} height={13} className="muted-ic" />
+            )}
             <span className="chat-time">{c.time}</span>
           </div>
           <div className="chat-bottom">
@@ -181,6 +208,17 @@ export default function Sidebar({
                 <PencilIcon />
               </button>
             )}
+            {onToggleMute && (
+              <button
+                className={`row-act ${c.mutedInAll ? 'on' : ''}`}
+                title={c.mutedInAll ? 'Show in All Chats again' : 'Keep out of All Chats (even when they message)'}
+                aria-label={c.mutedInAll ? 'Unmute in All Chats' : 'Mute in All Chats'}
+                aria-pressed={c.mutedInAll === true}
+                onClick={() => onToggleMute(c.id)}
+              >
+                {c.mutedInAll ? <BellIcon /> : <BellOffIcon />}
+              </button>
+            )}
             {onHide && (
               <button
                 className="row-act"
@@ -199,12 +237,8 @@ export default function Sidebar({
   return (
     <aside className="sidebar">
       <header className="sidebar-head">
-        <ScopeMenu options={scopeOptions} scope={scope} />
         <h1>{network === 'all' ? 'All Chats' : (APPS[network]?.name ?? 'Chats')}</h1>
         {loading && <span className="spinner small" role="status" aria-label="Refreshing" />}
-        <div className="head-actions">
-          <button className="icon-btn" aria-label="New chat"><ComposeIcon /></button>
-        </div>
       </header>
 
       <div className="search">
@@ -252,27 +286,28 @@ export default function Sidebar({
             {loading && network === 'all'
               ? 'Loading your chats…'
               : network === 'all' && scopeOptions.length > 0 && scopeOptions.every((id) => !scope.isShown(id))
-              ? 'No apps are shown in All Chats. Use the layers button above to pick some.'
+              ? 'No apps are shown in All Chats. Use the + menu in the top bar to pick some.'
               : network !== 'all'
               ? `No conversations from ${APPS[network]?.name ?? 'this app'} yet.`
               : 'Nothing here yet ✨'}
           </li>
         )}
-        {list.filter((c) => !isHiddenChat(c)).map(row)}
-        {network === 'all' && filter === 'archive' && list.some(isHiddenChat) && (
+        {list.filter((c) => network !== 'all' || !(isHiddenChat(c) || c.mutedInAll)).map(row)}
+        {network === 'all' && filter === 'archive' && list.some((c) => c.mutedInAll) && (
+          <li className="hidden-section">
+            <h3>Muted</h3>
+            <p>Out of All Chats until you unmute them, even when they message.</p>
+            <ul>{list.filter((c) => c.mutedInAll).map(row)}</ul>
+          </li>
+        )}
+        {network === 'all' && filter === 'archive' && list.some((c) => isHiddenChat(c) && !c.mutedInAll) && (
           <li className="hidden-section">
             <h3>Hidden</h3>
             <p>Out of All Chats until there is something new in them.</p>
-            <ul>{list.filter(isHiddenChat).map(row)}</ul>
+            <ul>{list.filter((c) => isHiddenChat(c) && !c.mutedInAll).map(row)}</ul>
           </li>
         )}
       </ul>
-
-      {onClearAppChats && (
-        <button className="clear-app-chats" onClick={onClearAppChats}>
-          Clear conversations from app notifications
-        </button>
-      )}
     </aside>
   )
 }

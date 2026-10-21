@@ -5,12 +5,14 @@ import { LIMIT_CHOICES } from '../useApps'
 import { addressFromQuery, hostOf, makeCustom, searchSuggestions } from '../customApps'
 
 // The "+" button after the app icons: every app Bird knows, each with a
-// Show/Hide button, how many apps the bar shows before "More", and a search that
+// pair of switches (on the top bar, in All Chats), how many apps the bar shows before "More", and a search that
 // finds more services or takes any web address to add as an app.
 export default function AppsMenu({
   shown,
   limit,
   custom = [],
+  isInAll,
+  onToggleInAll,
   onShow,
   onHide,
   onLimit,
@@ -109,36 +111,52 @@ export default function AppsMenu({
               <p className="apps-hint">The rest go under More. Drag icons in the bar to reorder.</p>
             </>
           )}
+          <div className="apps-cols" aria-hidden="true">
+            <span>Top bar</span>
+            {onToggleInAll && <span>All Chats</span>}
+          </div>
           <ul>
             {apps.map((app) => {
               const on = shown.includes(app.id)
+              const inAll = isInAll?.(app.id) ?? true
               return (
                 <li key={app.id}>
                   <NetworkIcon network={app.id} size={34} />
                   <span className="app-menu-text">
                     <span className="app-menu-name">{app.name}</span>
                     <span className="app-menu-blurb">{app.blurb}</span>
+                    {app.custom && (
+                      <button
+                        className="app-menu-link"
+                        title="Remove this app and sign out of it"
+                        onClick={() => onRemoveCustom?.(app.id)}
+                      >
+                        Remove app
+                      </button>
+                    )}
                   </span>
-                  {app.custom && (
-                    <button
-                      className="app-menu-btn"
-                      title="Remove this app and sign out of it"
-                      onClick={() => onRemoveCustom?.(app.id)}
-                    >
-                      Remove
-                    </button>
-                  )}
                   <button
-                    className={`app-menu-btn ${on ? '' : 'primary'}`}
+                    className={`toggle ${on ? 'on' : ''}`}
+                    role="switch"
+                    aria-checked={on}
+                    aria-label={`Show ${app.name} in the top bar`}
+                    title={on ? 'On the top bar' : 'Not on the top bar'}
                     onClick={() => (on ? onHide(app.id) : onShow(app.id))}
-                  >
-                    {on ? 'Hide' : 'Show'}
-                  </button>
+                  />
+                  {onToggleInAll && (
+                    <button
+                      className={`toggle ${inAll ? 'on' : ''}`}
+                      role="switch"
+                      aria-checked={inAll}
+                      aria-label={`Show ${app.name} chats in All Chats`}
+                      title={inAll ? 'Its chats show in All Chats' : 'Its chats are left out of All Chats'}
+                      onClick={() => onToggleInAll(app.id)}
+                    />
+                  )}
                 </li>
               )
             })}
           </ul>
-
           {q && (suggestions.length > 0 || addressApp) && <h3 className="apps-sub">Add</h3>}
           {q && (
             <ul>
@@ -179,7 +197,7 @@ export default function AppsMenu({
           )}
           {!q && (
             <p className="apps-hint">
-              Hiding an app keeps you signed in. Search to find more apps, or type any web address to add it.
+              Turning an app off in the top bar only takes its icon away: you stay signed in and its chats keep showing in All Chats unless you turn that off too. Search to find more apps, or type any web address to add one.
             </p>
           )}
         </div>

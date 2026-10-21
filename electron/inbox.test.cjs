@@ -95,3 +95,17 @@ test('removeApp forgets one app for one user only', () => {
   assert.equal(inbox.list('u2').length, 1)
   assert.equal(inbox.removeApp('u1', 'discord'), false)
 })
+
+test('a page chat takes its unread count from the notifications for that chat', () => {
+  const { withNoteCounts } = require('./inbox.cjs')
+  const now = 1_000_000
+  const page = (name, unread) => ({ app: 'instagram', key: `page:${name}`, name, unread })
+  const note = (name, unread, at) => ({ app: 'instagram', key: `instagram:${name.toLowerCase()}`, name, unread, at })
+  const { items, read } = withNoteCounts(
+    [page('Sam Lee', 1), page('Ana', 0), page('Old', 0), page('Quiet', 0)],
+    [note('sam lee', 4, now - 5_000), note('Ana', 2, now - 5_000), note('Old', 3, now - 120_000)],
+    now,
+  )
+  assert.deepEqual(items.map((i) => [i.name, i.unread]), [['Sam Lee', 4], ['Ana', 2], ['Old', 0], ['Quiet', 0]])
+  assert.deepEqual(read, ['instagram:old'])
+})

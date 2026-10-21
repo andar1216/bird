@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import NetworkIcon from './NetworkIcon'
 import { APPS } from '../data'
 import { bird } from '../bird'
@@ -6,9 +6,11 @@ import { useNow, useUsage } from '../useUsage'
 import {
   chartColor,
   dayStart,
+  daysAgoStart,
   formatClock,
   formatDuration,
   nextDayStart,
+  opensByApp,
   perDay,
   segmentsOnDay,
   timelineRange,
@@ -28,6 +30,8 @@ function sum(values) {
 export default function UsagePanel({ onClose }) {
   const data = useUsage(DAYS)
   const now = useNow(1000)
+  // Times opened: today, or across the last week.
+  const [opensSpan, setOpensSpan] = useState('today')
 
   const view = useMemo(() => {
     if (!data) return null
@@ -35,14 +39,19 @@ export default function UsagePanel({ onClose }) {
     const today = dayStart(now)
     const todaySegs = segmentsOnDay(segments, today)
     const totals = totalsByApp(segments, today, nextDayStart(today))
+    // Bird itself being open (not an app): one total per day.
+    const birdSegs = withLive(data.birdOpen ?? [], now).map((s) => ({ ...s, app: 'bird' }))
     return {
+      bird: perDay(birdSegs, DAYS, now).reverse().map((d) => ({ start: d.start, ms: d.perApp.bird ?? 0 })),
+      birdLive: (data.birdOpen ?? []).some((s) => s.live),
       days: perDay(segments, DAYS, now),
       todaySegs,
       totals,
       range: timelineRange(todaySegs, today),
       apps: Object.keys(totals).sort((a, b) => totals[b] - totals[a]),
+      opens: opensByApp(data.opens, opensSpan === 'today' ? today : daysAgoStart(DAYS - 1, now), nextDayStart(today)),
     }
-  }, [data, now])
+  }, [data, now, opensSpan])
 
   const todayTotal = view ? sum(Object.values(view.totals)) : 0
   const activeApp = data?.active?.app
@@ -92,6 +101,81 @@ export default function UsagePanel({ onClose }) {
                       <span className="usage-time">{formatDuration(view.totals[app])}</span>
                     </li>
                   ))}
+                </ul>
+              )}
+            </section>
+
+            <section className="usage-card">
+              <h3>Bird open</h3>
+              <div className="usage-total">
+                {formatDuration(view.bird[0]?.ms ?? 0)}
+                {view.birdLive && <span className="usage-live">● open now</span>}
+              </div>
+              <p className="usage-note">
+                How long Bird itself has been open today, whether or not it was the window in front.
+                It stops while the window is minimized or closed.
+              </p>
+              <ul className="usage-apps">
+                {view.bird.map((d, i) => (
+                  <li key={d.start}>
+                    <img className="usage-bird" src="/bird.png" alt="" width="22" height="22" />
+                    <span className="usage-app-name">
+                      {i === 0
+                        ? 'Today'
+                        : i === 1
+                        ? 'Yesterday'
+                        : new Date(d.start).toLocaleDateString([], { weekday: 'long' })}
+                    </span>
+                    <span className="usage-bar" aria-hidden="true">
+                      <i
+                        style={{
+                          width: `${(d.ms / Math.max(...view.bird.map((x) => x.ms), 1)) * 100}%`,
+                          background: 'var(--accent)',
+                        }}
+                      />
+                    </span>
+                    <span className="usage-time">{d.ms ? formatDuration(d.ms) : '—'}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="usage-card">
+              <div className="usage-opens-head">
+                <h3>Times opened</h3>
+                <div className="usage-span" role="group" aria-label="Period">
+                  <button className={`pill ${opensSpan === 'today' ? 'on' : ''}`} onClick={() => setOpensSpan('today')}>
+                    Today
+                  </button>
+                  <button className={`pill ${opensSpan === 'week' ? 'on' : ''}`} onClick={() => setOpensSpan('week')}>
+                    {DAYS} days
+                  </button>
+                </div>
+              </div>
+              <p className="usage-note">
+                Clicks that opened an app. &ldquo;App only&rdquo; counts its icon in the top bar;
+                &ldquo;With messages&rdquo; also counts opening one of its conversations from All Chats.
+              </p>
+              {Object.keys(view.opens).length === 0 ? (
+                <p className="usage-empty">No opens yet.</p>
+              ) : (
+                <ul className="usage-opens">
+                  <li className="usage-opens-cols" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span>App only</span>
+                    <span>With messages</span>
+                  </li>
+                  {Object.keys(view.opens)
+                    .sort((a, b) => view.opens[b].all - view.opens[a].all)
+                    .map((app) => (
+                      <li key={app}>
+                        <NetworkIcon network={app} size={26} />
+                        <span className="usage-app-name">{nameOf(app)}</span>
+                        <span className="usage-count">{view.opens[app].app}</span>
+                        <span className="usage-count">{view.opens[app].all}</span>
+                      </li>
+                    ))}
                 </ul>
               )}
             </section>

@@ -107,6 +107,27 @@ function createInbox(file) {
   return { load, save, add, list, markRead, markAppRead, remove, removeApp, clear }
 }
 
+// A page only says whether a conversation is unread (0 or 1), so its badge takes the
+// count from the notifications the app raised for that conversation (matched by name).
+// `read` lists notification keys that went stale (the page shows the chat read, and the
+// last notification is over a minute old: it was read elsewhere), to be marked read.
+const FRESH_MS = 60_000
+const sameChat = (app, name) => `${app}:${String(name).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')}`
+
+function withNoteCounts(pageItems, notes, now = Date.now()) {
+  const noteFor = new Map(notes.map((x) => [sameChat(x.app, x.name), x]))
+  const read = []
+  const items = pageItems.map((item) => {
+    const note = noteFor.get(sameChat(item.app, item.name))
+    if (!note || note.unread === 0) return item
+    if (item.unread > 0) return { ...item, unread: Math.max(item.unread, note.unread) }
+    if (now - note.at < FRESH_MS) return { ...item, unread: note.unread } // not on the page yet
+    read.push(note.key)
+    return item
+  })
+  return { items, read }
+}
+
 // Script run inside an app's page. It wraps the page's Notification calls so
 // each one is also reported (as a console message starting with `marker`) and
 // then shown as usual. It never reads anything else from the page.
@@ -157,4 +178,4 @@ function parseReport(marker, message) {
   }
 }
 
-module.exports = { createInbox, hookScript, parseReport, MAX_PER_USER }
+module.exports = { createInbox, hookScript, parseReport, withNoteCounts, MAX_PER_USER }

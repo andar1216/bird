@@ -98,3 +98,16 @@ export function chartColor(hex) {
   const lum = (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255
   return lum < 0.2 ? '#7c7f93' : hex
 }
+
+// How many times each app was opened inside [from, to): `app` counts opens from the
+// app's icon, `all` adds the ones made through its conversations in All Chats.
+export function opensByApp(opens, from, to) {
+  const out = {}
+  for (const o of opens ?? []) {
+    if (o.at < from || o.at >= to) continue
+    const row = (out[o.app] ??= { app: 0, chat: 0, all: 0 })
+    row[o.via === 'chat' ? 'chat' : 'app']++
+    row.all++
+  }
+  return out
+}

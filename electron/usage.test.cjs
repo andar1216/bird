@@ -96,3 +96,45 @@ test('screen-time helpers: clipping, per-day totals, formatting', async () => {
   const r = s.timelineRange([{ app: 'x', start: midnight + 14 * hour + 600_000, end: midnight + 14 * hour + 900_000 }], midnight)
   assert.ok(r.to - r.from >= 6 * hour && r.from <= midnight + 14 * hour && r.to >= midnight + 15 * hour)
 })
+
+test('opens are recorded per account and can be read back by source', () => {
+  const file = tmpFile()
+  const t = createUsageTracker(file)
+  assert.equal(t.recordOpen('me', 'discord', 'app', T0), true)
+  assert.equal(t.recordOpen('me', 'discord', 'chat', T0 + 5), true)
+  assert.equal(t.recordOpen('me', 'discord', 'bogus', T0 + 6), false)
+  t.recordOpen('you', 'discord', 'app', T0 + 7)
+  t.save(T0 + 10)
+  const again = createUsageTracker(file)
+  again.load(T0 + 20)
+  assert.deepEqual(again.query('me', 0, T0 + 20).opens, [
+    { app: 'discord', at: T0, via: 'app' },
+    { app: 'discord', at: T0 + 5, via: 'chat' },
+  ])
+})
+
+test('Bird being open is timed apart from the apps, and an app visit does not interrupt it', () => {
+  const t = createUsageTracker(tmpFile())
+  t.setBirdOpen({ u: 'me' }, T0)
+  t.set({ u: 'me', a: 'discord' }, T0 + sec(10))
+  t.set(null, T0 + sec(70))
+  t.set({ u: 'me', a: 'discord' }, T0 + sec(75)) // a menu closed again: still one visit
+  t.set(null, T0 + sec(120))
+  const live = t.query('me', 0, T0 + sec(200))
+  assert.deepEqual(live.birdOpen, [{ start: T0, end: T0 + sec(200), live: true }])
+  assert.deepEqual(live.segments.map((s) => [s.app, s.end - s.start]), [['discord', sec(110)]])
+  t.setBirdOpen(null, T0 + sec(300))
+  const done = t.query('me', 0, T0 + sec(400))
+  assert.deepEqual(done.birdOpen, [{ start: T0, end: T0 + sec(300), live: false }])
+  assert.equal(t.query('someone-else', 0, T0 + sec(400)).birdOpen.length, 0)
+})
+
+test('Bird open time is saved, including the stretch still in progress', () => {
+  const file = tmpFile()
+  const a = createUsageTracker(file)
+  a.setBirdOpen({ u: 'me' }, T0)
+  a.save(T0 + sec(50))
+  const b = createUsageTracker(file)
+  b.load(T0 + sec(60))
+  assert.deepEqual(b.query('me', 0, T0 + sec(60)).birdOpen, [{ start: T0, end: T0 + sec(50), live: false }])
+})

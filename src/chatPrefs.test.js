@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { applyPrefs, matchesQuery, withNick, withStar } from './chatPrefs.js'
+import { applyPrefs, matchesQuery, withMute, withNick, withStar } from './chatPrefs.js'
 
 test('a starred conversation is marked and can be unstarred', () => {
   let prefs = withStar({}, 'a', true)
@@ -30,4 +30,15 @@ test('search finds a conversation by nickname or real name', () => {
   assert.equal(matchesQuery(chat, 'baker'), true)
   assert.equal(matchesQuery(chat, 'zed'), false)
   assert.equal(matchesQuery(chat, ''), true)
+})
+
+test('a muted conversation is marked, and muting leaves star and nickname alone', () => {
+  let prefs = withNick(withStar({}, 'a', true), 'a', 'Annie')
+  prefs = withMute(prefs, 'a', true)
+  const chat = applyPrefs({ id: 'a', name: 'Ann' }, prefs)
+  assert.equal(chat.mutedInAll, true)
+  assert.equal(chat.starred, true)
+  assert.equal(chat.name, 'Annie')
+  assert.equal(applyPrefs({ id: 'b', name: 'Bo' }, prefs).mutedInAll, false)
+  assert.deepEqual(withMute(withMute({}, 'a', true), 'a', false), {})
 })

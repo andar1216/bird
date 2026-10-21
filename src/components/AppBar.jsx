@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import AppsMenu from './AppsMenu'
+import { LayersIcon } from './Icons'
 import NetworkIcon from './NetworkIcon'
 import { APPS } from '../data'
 import { useGray } from '../useGrayscale'
@@ -17,6 +18,8 @@ export default function AppBar({
   onShow,
   onHide,
   onLimit,
+  isInAll,
+  onToggleInAll,
   custom,
   onAddCustom,
   onRemoveCustom,
@@ -94,6 +97,15 @@ export default function AppBar({
 
   return (
     <div className="app-bar-icons" role="tablist" aria-label="Apps">
+      <button
+        className={`app-tab all-tab ${network === 'all' ? 'on' : ''}`}
+        onClick={() => onSelect('all')}
+        title="All Chats"
+        aria-label="All Chats"
+        aria-pressed={network === 'all'}
+      >
+        <LayersIcon width={22} height={22} />
+      </button>
       {visible.map((id) => (
         <button
           key={id}
@@ -162,6 +174,8 @@ export default function AppBar({
         onShow={onShow}
         onHide={onHide}
         onLimit={onLimit}
+        isInAll={isInAll}
+        onToggleInAll={onToggleInAll}
         custom={custom}
         onAddCustom={onAddCustom}
         onRemoveCustom={onRemoveCustom}

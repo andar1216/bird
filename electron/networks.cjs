@@ -67,6 +67,12 @@ const NETWORKS = {
       'office.com',
       'live.com',
       'skype.com',
+      // New Teams lives on cloud.microsoft. Leaving it for the browser is what makes
+      // Windows hand the link to the Teams desktop app.
+      'cloud.microsoft',
+      'sharepoint.com',
+      'msauth.net',
+      'msftauth.net',
     ],
   },
   linkedin: {

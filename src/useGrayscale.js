@@ -7,12 +7,14 @@ import { APPS } from './data'
 //   'icon'   the app's icon (and unread badge) in Bird's own interface
 //   'screen' the app's page, drawn in black and white by the desktop shell
 // A per-app mode is 'default' (follow the default), 'on' (gray) or 'off' (color).
+// A third, simpler choice greys the All Chats lists and Bird's own chat view (the
+// people, avatars and badges there), whichever apps they come from.
 // Saved per account on this device.
 export const KINDS = ['icon', 'screen']
 const MODES = ['default', 'on', 'off']
 const storageKey = (userId) => `bird.grayscale.${userId}`
 
-const empty = () => ({ defaults: { icon: false, screen: false }, apps: {} })
+const empty = () => ({ defaults: { icon: false, screen: false }, apps: {}, chats: false })
 
 function load(userId) {
   let raw = null
@@ -28,6 +30,7 @@ function load(userId) {
   try {
     const saved = JSON.parse(raw ?? '{}')
     const out = empty()
+    out.chats = saved.chats === true
     if (saved.defaults) for (const k of KINDS) out.defaults[k] = saved.defaults[k] === true
     else if (saved.d === true) out.defaults = { icon: true, screen: true } // previous format
     // Previous format had one mode per app, which applied to both.
@@ -52,6 +55,8 @@ export function useGrayscale(userId) {
   const value = useMemo(() => {
     const modeOf = (id, kind) => state.apps[id]?.[kind] ?? 'default'
     return {
+      chatsGray: state.chats,
+      toggleChats: () => setState((s) => ({ ...s, chats: !s.chats })),
       defaultOn: (kind) => state.defaults[kind],
       toggleDefault: (kind) =>
         setState((s) => ({ ...s, defaults: { ...s.defaults, [kind]: !s.defaults[kind] } })),
@@ -89,6 +94,8 @@ export function useGrayscale(userId) {
 }
 
 export const GrayscaleContext = createContext({
+  chatsGray: false,
+  toggleChats: () => {},
   defaultOn: () => false,
   toggleDefault: () => {},
   modeOf: () => 'default',

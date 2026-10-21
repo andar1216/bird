@@ -1,13 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import AuthGate from './components/AuthGate'
 import UnifiedView from './components/UnifiedView'
 import { useSession } from './useSession'
+import { loadTheme, saveTheme } from './theme'
 import './App.css'
 
 export default function App() {
-  const [theme, setTheme] = useState(() =>
-    window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
-  )
+  const [theme, setTheme] = useState(loadTheme)
+  useEffect(() => saveTheme(theme), [theme])
   const session = useSession()
   const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))
 
