@@ -109,6 +109,13 @@
   letter-spacing: 0.02em;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
 }
+.avatar-photo {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.avatar { overflow: hidden; }
 .avatar-badge {
   position: absolute;
   right: -3px;
@@ -209,17 +216,19 @@
 /* Pinned row */
 .pinned {
   display: flex;
-  justify-content: space-around;
   gap: 4px;
   padding: 4px 12px 12px;
   border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 .pin {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  flex: 1;
+  flex: 0 0 76px;
+  min-width: 0;
   padding: 8px 4px;
   border-radius: 14px;
 }
@@ -232,7 +241,15 @@
   right: -8px;
   box-shadow: 0 0 0 2px var(--panel-solid);
 }
-.pin-name { font-size: 12.5px; font-weight: 600; color: var(--text-dim); }
+.pin-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
 
 /* Chat list */
 .chat-list {
@@ -979,12 +996,17 @@
 
 /* Hide a conversation from All Chats until something new happens in it. */
 .chat-li { position: relative; }
-.row-hide {
+.row-actions {
   position: absolute;
-  right: 12px;
+  right: 10px;
   top: 50%;
   transform: translateY(-50%);
   display: none;
+  gap: 4px;
+}
+.chat-li:hover .row-actions, .row-actions:focus-within { display: flex; }
+.row-act {
+  display: grid;
   place-items: center;
   width: 28px;
   height: 28px;
@@ -993,9 +1015,20 @@
   background: var(--panel-solid);
   box-shadow: 0 0 0 1px var(--border);
 }
-.chat-li:hover .row-hide, .row-hide:focus-visible { display: grid; }
-.row-hide:hover { color: var(--text); }
-.chat-row.is-hidden { opacity: 0.55; }
+.row-act:hover { color: var(--text); }
+.row-act.on { color: #f5a623; }
+.star-mark { color: #f5a623; margin-right: 4px; }
+.nick-input {
+  min-width: 0;
+  flex: 1;
+  font: inherit;
+  font-weight: 650;
+  color: var(--text);
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px 8px;
+}.chat-row.is-hidden { opacity: 0.55; }
 
 /* Archive: conversations hidden from All Chats. */
 .hidden-section { padding: 6px 12px 10px; }
@@ -1018,3 +1051,26 @@
 .empty-state .spinner { margin-bottom: 14px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+
+/* Search and add apps in the "+" menu. */
+.apps-search {
+  width: calc(100% - 16px);
+  margin: 0 8px 8px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.apps-sub { margin-top: 12px; }
+.suggest-icon {
+  width: 34px;
+  height: 34px;
+  color: #fff;
+  font-weight: 700;
+  background: #6b7280;
+}
+.net-icon img { border-radius: 4px; }
+.net-letter { color: #fff; font-weight: 700; line-height: 1; }

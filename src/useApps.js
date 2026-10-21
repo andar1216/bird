@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
-import { APPS, NETWORK_ORDER } from './data'
+import { APPS, NETWORK_ORDER, registerCustomApps } from './data'
+import { bird } from './bird'
+import { makeCustom } from './customApps'
 
 // The apps in the top bar for each account: which ones are shown, in what
 // order, and how many fit before "More". Kept per account on this device, next
 // to that account's app logins. Hiding an app only takes it off the bar; its
 // login stays.
 const storageKey = (userId) => `bird.appBar.${userId}`
+const customKey = (userId) => `bird.customApps.${userId}`
+
 const oldKey = (userId) => `bird.apps.${userId}` // v1: just the extra apps added with "+"
 
 export const LIMIT_CHOICES = [3, 4, 5, 6, 8, 10, null] // null = all of them
@@ -33,9 +37,41 @@ function load(userId) {
   return { order: clean([...NETWORK_ORDER, ...extra]), limit: DEFAULT_LIMIT }
 }
 
+// Apps this account added itself, kept next to the bar settings.
+function loadCustom(userId) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(customKey(userId)))
+    if (Array.isArray(saved)) {
+      return saved
+        .filter((c) => c && typeof c.id === 'string' && typeof c.name === 'string' && typeof c.url === 'string')
+        .map((c) => ({ id: c.id, name: c.name, url: c.url, hosts: Array.isArray(c.hosts) ? c.hosts : [] }))
+        .slice(0, 30)
+    }
+  } catch {
+    /* none added */
+  }
+  return []
+}
+
 export function useApps(userId) {
+  // Registered while rendering so every component sees the added apps right away.
+  const [custom, setCustom] = useState(() => {
+    const list = loadCustom(userId)
+    registerCustomApps(list)
+    return list
+  })
   const [state, setState] = useState(() => load(userId))
   const { order, limit } = state
+
+  // Tell the desktop shell which sites the added apps may open (before the bar's apps load).
+  useEffect(() => {
+    bird?.setCustomApps?.(custom)
+    try {
+      localStorage.setItem(customKey(userId), JSON.stringify(custom))
+    } catch {
+      /* storage unavailable: they just won't be remembered */
+    }
+  }, [userId, custom])
 
   useEffect(() => {
     try {
@@ -70,5 +106,26 @@ export function useApps(userId) {
   )
   const setLimit = useCallback((n) => setState((s) => ({ ...s, limit: validLimit(n) })), [])
 
-  return { apps: order, limit, show, hide, move, setLimit }
+  // Add a site as an app (and put it on the bar). Returns its id.
+  const addCustom = useCallback((spec) => {
+    const app = makeCustom(spec)
+    setCustom((cur) => {
+      const next = [...cur.filter((c) => c.id !== app.id), app].slice(-30)
+      registerCustomApps(next)
+      return next
+    })
+    setState((s) => (s.order.includes(app.id) ? s : { ...s, order: [...s.order, app.id] }))
+    return app.id
+  }, [])
+  // Forget an added app (its login is wiped by the caller).
+  const removeCustom = useCallback((id) => {
+    setCustom((cur) => {
+      const next = cur.filter((c) => c.id !== id)
+      registerCustomApps(next)
+      return next
+    })
+    setState((s) => ({ ...s, order: s.order.filter((x) => x !== id) }))
+  }, [])
+
+  return { apps: order, limit, custom, show, hide, move, setLimit, addCustom, removeCustom }
 }

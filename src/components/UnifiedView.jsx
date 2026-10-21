@@ -17,6 +17,8 @@ import { useConversationLimit } from '../useConversationLimit'
 import { useListHidden } from '../useListHidden'
 import { useListing } from '../useListing'
 import { useHiddenChats } from '../useHiddenChats'
+import { useChatPrefs } from '../useChatPrefs'
+import { applyPrefs, matchesQuery } from '../chatPrefs'
 
 function matchesFilter(c, filter) {
   switch (filter) {
@@ -194,9 +196,10 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
   // Conversations the apps told us about through notifications, next to the
   // server's chats. Opening one opens its app.
   const appChats = useInbox()
+  const chatPrefs = useChatPrefs(user.id)
   const everyChat = useMemo(
-    () => [...chats, ...appChats],
-    [chats, appChats],
+    () => [...chats, ...appChats].map((c) => applyPrefs(c, chatPrefs.prefs)),
+    [chats, appChats, chatPrefs.prefs],
   )
 
   // Which apps All Chats includes (all of them down to none).
@@ -226,14 +229,15 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
     const inAll = network === 'all'
     return everyChat
       .filter((c) => {
-        if (!(!q || c.name.toLowerCase().includes(q))) return false
-        if (!inAll) return matchesFilter(c, filter) && (appOpen || c.network === network)
+        if (!matchesQuery(c, q)) return false
+        // Inside an app, the list is just that app's conversations (by name).
+        if (!inAll) return c.network === network && matchesFilter(c, filter)
         if (!scope.isShown(c.network)) return false
         if (hiding.hidden.has(c.id)) return filter === 'archive'
         return matchesFilter(c, filter)
       })
       .sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt))
-  }, [everyChat, filter, network, appOpen, query, scope, hiding.hidden])
+  }, [everyChat, filter, network, query, scope, hiding.hidden])
   const pinnable = useMemo(
     () => inScope.filter((c) => !hiding.hidden.has(c.id)),
     [inScope, hiding.hidden],
@@ -254,7 +258,8 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
     }
   }
 
-  const active = chats.find((c) => c.id === activeId)
+  const activeRaw = chats.find((c) => c.id === activeId)
+  const active = activeRaw && applyPrefs(activeRaw, chatPrefs.prefs)
 
   let pane
   if (panel === 'matrix') {
@@ -338,6 +343,22 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
           if (network === id) selectNetwork('all')
         },
         onLimit: appList.setLimit,
+        custom: appList.custom,
+        // A site added by name or address: put it on the bar, in All Chats, and open it.
+        onAddCustom: (spec) => {
+          const id = appList.addCustom(spec)
+          scope.setShown([id], true)
+          selectNetwork(id)
+        },
+        // Take an added app away and sign out of it (its stored login is wiped).
+        onRemoveCustom: (id) => {
+          appList.hide(id)
+          if (network === id) selectNetwork('all')
+          const done = () => appList.removeCustom(id)
+          const wipe = bird?.unlinkApp?.(id)
+          if (wipe) wipe.catch(() => {}).finally(done)
+          else done()
+        },
       }}
       onMenuOpenChange={setMenuOpen}
     />
@@ -348,6 +369,8 @@ export default function UnifiedView({ user, onSignOut, theme, toggleTheme }) {
         loading={listing}
         hiddenIds={hiding.hidden}
         onHide={hiding.hide}
+        onToggleStar={chatPrefs.toggleStar}
+        onRename={chatPrefs.rename}
         onUnhide={hiding.unhide}
         scope={scope}
         scopeOptions={scopeOptions}

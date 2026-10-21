@@ -1,7 +1,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { app, BrowserWindow, WebContentsView, ipcMain, powerMonitor, session, shell } = require('electron')
-const { NETWORKS, ALLOWED_PERMISSIONS, isAllowedUrl, parseBadge } = require('./networks.cjs')
+const { NETWORKS, ALLOWED_PERMISSIONS, isAllowedUrl, parseBadge, setCustomNetworks } = require('./networks.cjs')
 const custom = require('./customizations.cjs')
 const { createUsageTracker } = require('./usage.cjs')
 const { createInbox, hookScript, parseReport } = require('./inbox.cjs')
@@ -207,7 +207,7 @@ function createNetworkView(id) {
     }
   })
 
-  const entry = { view, count: 0, dot: false, cssKey: null, grayKey: null, pollTimer: null, readerView: null }
+  const entry = { view, count: 0, dot: false, cssKey: null, grayKey: null, pollTimer: null, readerView: null, hold: 0 }
   views.set(id, entry)
 
   // Single-page apps change address without a page load; enforce the same rules.
@@ -275,9 +275,11 @@ function createNetworkView(id) {
     const gone = () => views.get(id) !== entry || target.isDestroyed()
     let polling = false
     let reads = 0
-    let fullAt = -1 // the count at which scrolling stopped finding more
+    let fullAt = -1 // for lists that keep every row: the count at which scrolling stopped finding more
+    let lastPass = 0 // for lists that keep only visible rows: when they were last read in full
+    let passLimit = null
     const poll = async () => {
-      if (polling || gone() || target.isLoading()) return
+      if (polling || gone() || target.isLoading() || entry.hold > Date.now()) return
       polling = true
       try {
         const limit = limitOf(pageLimits[id])
@@ -286,7 +288,11 @@ function createNetworkView(id) {
         const found = new Map()
         const take = async () => {
           const got = normalize(id, await target.executeJavaScript(reader.script(limit)), Date.now(), limit)
-          for (const item of got) found.set(item.key, item)
+          for (const { guess, ...item } of got) {
+            // A row with no readable time (an open chat hides it) keeps what was known.
+            const old = guess ? (pageChats.get(id) ?? []).find((o) => o.key === item.key) : null
+            found.set(item.key, old ? { ...item, at: old.at, preview: old.preview, unread: old.unread } : item)
+          }
         }
         await take()
         reads++
@@ -297,22 +303,45 @@ function createNetworkView(id) {
         // Never move the page you are looking at.
         const seeing = target === wc && activeId === id
         let scrolled = false
-        let complete = false
-        if (!seeing) {
-          complete = true
+        // A list that keeps only its on-screen rows takes a long scroll to read in full,
+        // so that is done now and then (and when the limit changes); in between, just
+        // its top rows are read and merged into what is known.
+        const fullPass = reader.virtual
+          ? found.size > 0 && (Date.now() - lastPass > 5 * 60_000 || passLimit !== limit)
+          : found.size !== fullAt
+        let complete = !seeing && (!reader.virtual || fullPass)
+        if (!seeing && fullPass) {
+          // Start from the top: the list may have been left scrolled down (by you, or by
+          // an earlier read), and rows above that would be missed.
+          if (reader.virtual) {
+            await target.executeJavaScript(scrollScript(reader.rowSelector, true)).catch(() => {})
+            await sleep(800)
+            await take()
+          }
+          let stalls = 0
           for (let round = 0; round < (reader.virtual ? 80 : 25); round++) {
-            if (gone() || found.size >= limit || found.size === fullAt) break
+            if (gone() || found.size >= limit) break
+            if (entry.hold > Date.now()) {
+              complete = false // you opened a chat: stop moving the list
+              break
+            }
             const before = found.size
             scrolled = true
             const moved = await target.executeJavaScript(scrollScript(reader.rowSelector, false, reader.virtual))
             await sleep(1_200)
             await take()
-            if (!moved || found.size <= before) {
-              fullAt = found.size
-              break
+            if (found.size > before) {
+              stalls = 0
+              continue
             }
+            if (!moved || ++stalls >= 2) break
           }
-          if (scrolled && !gone()) await target.executeJavaScript(scrollScript(reader.rowSelector, true))
+          if (!reader.virtual) fullAt = found.size
+          if (found.size > 0 && complete) {
+            lastPass = Date.now()
+            passLimit = limit
+          }
+          if (scrolled && !gone() && entry.hold <= Date.now()) await target.executeJavaScript(scrollScript(reader.rowSelector, true))
         }
         if (gone()) return
         // While you're looking at the page only its visible rows can be read, so keep
@@ -332,6 +361,11 @@ function createNetworkView(id) {
     }
 
     entry.pollTimer = setInterval(poll, 15_000)
+    // A notification means something new arrived: read the list soon, not in 15s.
+    entry.pollSoon = () => {
+      clearTimeout(entry.pollSoonTimer)
+      entry.pollSoonTimer = setTimeout(poll, 1_500)
+    }
     target.on('did-finish-load', () => setTimeout(poll, 6_000))
   }
 
@@ -480,6 +514,7 @@ function scheduleInboxSave() {
 }
 
 function recordNotification(id, report) {
+  views.get(id)?.pollSoon?.()
   if (!inbox || !currentUserId) return
   if (inbox.add(currentUserId, id, report, { seen: onScreen(id) })) {
     sendInbox()
@@ -490,6 +525,7 @@ function recordNotification(id, report) {
 // Stop reading an app's conversation list (and close its hidden reader page).
 function disposeReader(entry) {
   clearInterval(entry.pollTimer)
+  clearTimeout(entry.pollSoonTimer)
   if (entry.readerView && !entry.readerView.webContents.isDestroyed()) entry.readerView.webContents.close()
   entry.readerView = null
 }
@@ -696,6 +732,21 @@ ipcMain.handle('bird:unlink-app', async (_event, id) => {
   return true
 })
 
+// Click where a page script says (a point in the page), with real mouse input. Some
+// apps ignore the clicks a script makes. Resolves true if there was somewhere to click.
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+async function clickAt(wc, locate) {
+  const pt = await wc.executeJavaScript(locate)
+  if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return false
+  const x = Math.round(pt.x)
+  const y = Math.round(pt.y)
+  wc.focus()
+  wc.sendInputEvent({ type: 'mouseMove', x, y })
+  wc.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 })
+  wc.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 })
+  return true
+}
+
 // Open one conversation (by the key we listed it under) inside its app.
 ipcMain.on('bird:open-app-chat', (_event, id, key) => {
   const reader = typeof id === 'string' && typeof key === 'string' ? readerFor(id) : null
@@ -710,16 +761,33 @@ ipcMain.on('bird:open-app-chat', (_event, id, key) => {
   } else if (reader.clickScript && !reader.url) {
     // The list is on the page already: click the row with that name. Rows that are
     // scrolled out of the page don't exist, so go back to the top of the list and retry.
+    // Some pages open the chat in a dead state ("You are no longer present") when it
+    // is opened right after the page comes on screen. Clicking the open chat closes it
+    // and clicking again opens it properly, so do that for them.
+    const repair = async (triesLeft) => {
+      await pause(1_500)
+      if (triesLeft <= 0 || wc.isDestroyed() || !reader.staleScript) return
+      const stale = await wc.executeJavaScript(reader.staleScript).catch(() => false)
+      if (!stale) return
+      await clickAt(wc, reader.locateScript(item.name)).catch(() => {})
+      await pause(900)
+      await clickAt(wc, reader.locateScript(item.name)).catch(() => {})
+      repair(triesLeft - 1)
+    }
     const click = (triesLeft) =>
-      wc
-        .executeJavaScript(reader.clickScript(item.name))
+      (reader.locateScript ? clickAt(wc, reader.locateScript(item.name)) : wc.executeJavaScript(reader.clickScript(item.name)))
         .then(async (done) => {
+          if (done && reader.staleScript) repair(3)
           if (done || triesLeft <= 0 || wc.isDestroyed()) return
           await wc.executeJavaScript(scrollScript(reader.rowSelector, true)).catch(() => {})
           setTimeout(() => click(triesLeft - 1), 400)
         })
         .catch(() => {})
-    click(12)
+    // Don't let the background reader scroll the list under the click.
+    entry.hold = Date.now() + 8_000
+    // A real click needs the page on screen at its final size, so give it a moment.
+    if (reader.locateScript) setTimeout(() => click(12), 500)
+    else click(12)
   } else if (reader.clickScript && reader.url) {
     // No links: open the app's list and click the row with that name.
     const click = (triesLeft) =>
@@ -739,6 +807,11 @@ ipcMain.on('bird:open-app-chat', (_event, id, key) => {
 // An app page asks (before its own scripts run) whether you have opened its app.
 ipcMain.on('bird:passkeys-allowed', (event) => {
   event.returnValue = [...views.values()].some((e) => e.opened && e.view.webContents === event.sender)
+})
+// Apps the user added by name or address. Sent before the apps on the bar, so they
+// exist by the time they are opened; anything removed has its page closed.
+ipcMain.on('bird:set-custom-apps', (_event, list) => {
+  for (const id of setCustomNetworks(list)) closeView(id)
 })
 // Which apps list their conversations from their pages, and how many to list each.
 ipcMain.handle('bird:reader-apps', () => readerApps())

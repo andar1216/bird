@@ -17,6 +17,9 @@ export default function AppBar({
   onShow,
   onHide,
   onLimit,
+  custom,
+  onAddCustom,
+  onRemoveCustom,
   onOpenChange,
 }) {
   const { isGray } = useGray()
@@ -159,6 +162,9 @@ export default function AppBar({
         onShow={onShow}
         onHide={onHide}
         onLimit={onLimit}
+        custom={custom}
+        onAddCustom={onAddCustom}
+        onRemoveCustom={onRemoveCustom}
         onOpenChange={setManageOpen}
       />
     </div>

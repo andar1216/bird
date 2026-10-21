@@ -84,6 +84,59 @@ const NETWORKS = {
     url: 'https://mail.google.com/',
     hosts: ['google.com', 'gstatic.com', 'googleusercontent.com'],
   },
+  reddit: {
+    name: 'Reddit',
+    url: 'https://www.reddit.com/',
+    // accounts.google.com is allowed so "Continue with Google" login stays in-session.
+    hosts: ['reddit.com', 'redd.it', 'redditmedia.com', 'redditstatic.com', 'accounts.google.com'],
+  },
+}
+
+// ---- Apps the user adds by name or address (see src/data.js). They are registered
+// from the UI, so each one is checked here: https only, a real domain name (no IP
+// addresses or "localhost"), and the view may only visit that domain (and
+// subdomains) plus a few login domains a known service needs.
+const MAX_CUSTOM = 30
+const hostOk = (h) =>
+  typeof h === 'string' &&
+  /^(?=.{3,253}$)([a-z0-9-]{1,63}\.)+[a-z]{2,63}$/.test(h) &&
+  !/^[\d.]+$/.test(h)
+
+function normalizeCustom(spec) {
+  if (!spec || typeof spec !== 'object') return null
+  let u
+  try {
+    u = new URL(spec.url)
+  } catch {
+    return null
+  }
+  if (u.protocol !== 'https:' || u.username || u.password) return null
+  const host = u.hostname.toLowerCase().replace(/^www\./, '')
+  if (!hostOk(host)) return null
+  const id = String(spec.id ?? '')
+  if (!/^custom-[a-z0-9-]{1,48}$/.test(id)) return null
+  const name = String(spec.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 40)
+  if (!name) return null
+  const extra = (Array.isArray(spec.hosts) ? spec.hosts : []).filter(hostOk).slice(0, 8)
+  return { id, name, url: u.toString(), hosts: [...new Set([host, ...extra])] }
+}
+
+// Replace the user's added apps in NETWORKS. Returns the ids that were dropped.
+function setCustomNetworks(list) {
+  const next = new Map()
+  for (const spec of (Array.isArray(list) ? list : []).slice(0, MAX_CUSTOM)) {
+    const n = normalizeCustom(spec)
+    if (n) next.set(n.id, n)
+  }
+  const dropped = []
+  for (const id of Object.keys(NETWORKS)) {
+    if (id.startsWith('custom-') && !next.has(id)) {
+      delete NETWORKS[id]
+      dropped.push(id)
+    }
+  }
+  for (const [id, n] of next) NETWORKS[id] = { name: n.name, url: n.url, hosts: n.hosts, custom: true }
+  return dropped
 }
 
 // Permissions a network page may be granted (only while on its own hosts).
@@ -120,4 +173,11 @@ function parseBadge(title) {
   return { count: 0, dot: false }
 }
 
-module.exports = { NETWORKS, ALLOWED_PERMISSIONS, isAllowedUrl, parseBadge }
+module.exports = {
+  NETWORKS,
+  ALLOWED_PERMISSIONS,
+  isAllowedUrl,
+  parseBadge,
+  normalizeCustom,
+  setCustomNetworks,
+}

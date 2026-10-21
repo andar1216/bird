@@ -1,6 +1,9 @@
+import { useState } from 'react'
 import Avatar from './Avatar'
 import ScopeMenu from './ScopeMenu'
 import { ComposeIcon, MuteIcon, SearchIcon } from './Icons'
+import { APPS } from '../data'
+import { NICK_MAX } from '../chatPrefs'
 
 const FILTERS = [
   { id: 'inbox', label: 'Inbox' },
@@ -39,6 +42,31 @@ const EyeOffIcon = () => (
   </svg>
 )
 
+const StarIcon = ({ filled }) => (
+  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+    <path
+      d="M12 3.500l2.600 5.300 5.900.8-4.300 4.100 1 5.800L12 16.800l-5.200 2.700 1-5.800L3.500 9.600l5.900-.8z"
+      fill={filled ? 'currentColor' : 'none'}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinejoin="round"
+    />
+  </svg>
+)
+
+const PencilIcon = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+    <path
+      d="M4 20h4L19 9a2.800 2.800 0 0 0-4-4L4 16v4zM13.500 6.500l4 4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+)
+
 export default function Sidebar({
   chats,
   allChats,
@@ -54,59 +82,125 @@ export default function Sidebar({
   loading,
   onHide,
   onUnhide,
+  onToggleStar,
+  onRename,
   query,
   setQuery,
 }) {
-  const pinned = allChats.filter((c) => c.pinned && !c.archived)
+  // Starred people (from any app) and the server's pinned chats, newest first.
+  const pinned = allChats
+    .filter((c) => c.starred || (c.pinned && !c.archived))
+    .sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt))
   const list = chats
+  // The conversation whose nickname is being typed.
+  const [editing, setEditing] = useState(null)
+  const finishRename = (c, value) => {
+    setEditing(null)
+    if (value !== null) onRename?.(c.id, value)
+  }
 
   const isHiddenChat = (c) => hiddenIds?.has(c.id) === true
   const row = (c) => {
     const isHidden = isHiddenChat(c)
+    const renaming = editing === c.id
+    const body = (
+      <>
+        <Avatar chat={c} size={46} />
+        <div className="chat-main">
+          <div className="chat-top">
+            {renaming ? (
+              <input
+                className="nick-input"
+                autoFocus
+                defaultValue={c.nicked ? c.name : ''}
+                placeholder={c.realName}
+                maxLength={NICK_MAX}
+                aria-label={`Nickname for ${c.realName}`}
+                onFocus={(e) => e.target.select()}
+                onBlur={(e) => finishRename(c, e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.target.blur()
+                  if (e.key === 'Escape') finishRename(c, null)
+                }}
+              />
+            ) : (
+              <span className="chat-name">
+                {c.starred && <span className="star-mark" aria-label="Starred">★</span>}
+                {c.name}
+              </span>
+            )}
+            {c.muted && <MuteIcon width={13} height={13} className="muted-ic" />}
+            <span className="chat-time">{c.time}</span>
+          </div>
+          <div className="chat-bottom">
+            {c.typing ? (
+              <span className="typing-line">
+                <i /><i /><i />
+              </span>
+            ) : (
+              <span className="chat-preview">
+                {c.nicked && !renaming ? `${c.realName} · ` : ''}
+                {preview(c)}
+              </span>
+            )}
+            <Badge chat={c} />
+          </div>
+        </div>
+      </>
+    )
+    const cls = `chat-row ${c.id === activeId ? 'active' : ''} ${isHidden && network !== 'all' ? 'is-hidden' : ''}`
     return (
-        <li key={c.id} className="chat-li">
-          <button
-            className={`chat-row ${c.id === activeId ? 'active' : ''} ${isHidden && network !== 'all' ? 'is-hidden' : ''}`}
-            onClick={() => onSelect(c.id)}
-          >
-            <Avatar chat={c} size={46} />
-            <div className="chat-main">
-              <div className="chat-top">
-                <span className="chat-name">{c.name}</span>
-                {c.muted && <MuteIcon width={13} height={13} className="muted-ic" />}
-                <span className="chat-time">{c.time}</span>
-              </div>
-              <div className="chat-bottom">
-                {c.typing ? (
-                  <span className="typing-line">
-                    <i /><i /><i />
-                  </span>
-                ) : (
-                  <span className="chat-preview">{preview(c)}</span>
-                )}
-                <Badge chat={c} />
-              </div>
-            </div>
+      <li key={c.id} className="chat-li">
+        {renaming ? (
+          <div className={cls}>{body}</div>
+        ) : (
+          <button className={cls} onClick={() => onSelect(c.id)}>
+            {body}
           </button>
-          {onHide && (
-            <button
-              className="row-hide"
-              title={isHidden ? 'Show in All Chats again' : 'Hide until there is something new'}
-              aria-label={isHidden ? 'Show in All Chats again' : 'Hide from All Chats'}
-              onClick={() => (isHidden ? onUnhide(c.id) : onHide(c))}
-            >
-              {isHidden ? <EyeIcon /> : <EyeOffIcon />}
-            </button>
-          )}
-        </li>
+        )}
+        {!renaming && (
+          <div className="row-actions">
+            {onToggleStar && (
+              <button
+                className={`row-act ${c.starred ? 'on' : ''}`}
+                title={c.starred ? 'Remove from the top of All Chats' : 'Keep at the top of All Chats'}
+                aria-label={c.starred ? 'Unstar' : 'Star'}
+                aria-pressed={c.starred === true}
+                onClick={() => onToggleStar(c.id)}
+              >
+                <StarIcon filled={c.starred} />
+              </button>
+            )}
+            {onRename && (
+              <button
+                className="row-act"
+                title="Give them a nickname"
+                aria-label="Rename"
+                onClick={() => setEditing(c.id)}
+              >
+                <PencilIcon />
+              </button>
+            )}
+            {onHide && (
+              <button
+                className="row-act"
+                title={isHidden ? 'Show in All Chats again' : 'Hide until there is something new'}
+                aria-label={isHidden ? 'Show in All Chats again' : 'Hide from All Chats'}
+                onClick={() => (isHidden ? onUnhide(c.id) : onHide(c))}
+              >
+                {isHidden ? <EyeIcon /> : <EyeOffIcon />}
+              </button>
+            )}
+          </div>
+        )}
+      </li>
     )
   }
-
   return (
     <aside className="sidebar">
       <header className="sidebar-head">
         <ScopeMenu options={scopeOptions} scope={scope} />
-        <h1>All Chats</h1>
+        <h1>{network === 'all' ? 'All Chats' : (APPS[network]?.name ?? 'Chats')}</h1>
         {loading && <span className="spinner small" role="status" aria-label="Refreshing" />}
         <div className="head-actions">
           <button className="icon-btn" aria-label="New chat"><ComposeIcon /></button>
@@ -159,6 +253,8 @@ export default function Sidebar({
               ? 'Loading your chats…'
               : network === 'all' && scopeOptions.length > 0 && scopeOptions.every((id) => !scope.isShown(id))
               ? 'No apps are shown in All Chats. Use the layers button above to pick some.'
+              : network !== 'all'
+              ? `No conversations from ${APPS[network]?.name ?? 'this app'} yet.`
               : 'Nothing here yet ✨'}
           </li>
         )}

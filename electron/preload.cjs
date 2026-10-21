@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('bird', {
   // Apps that list their conversations from their pages, and how many each lists.
   getReaderApps: () => ipcRenderer.invoke('bird:reader-apps'),
   setPageLimits: (map) => ipcRenderer.send('bird:set-page-limits', map),
+  setCustomApps: (list) => ipcRenderer.send('bird:set-custom-apps', list),
   unlinkApp: (id) => ipcRenderer.invoke('bird:unlink-app', id),
   setBackgroundApps: (ids) => ipcRenderer.send('bird:set-background-apps', ids),
   // Rectangle (CSS px, window-relative) where the web view should be drawn.

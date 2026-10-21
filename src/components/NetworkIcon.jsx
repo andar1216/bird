@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { useGray } from '../useGrayscale'
+import { APPS } from '../data'
 
 // Simple stylised network glyphs on brand-colored tiles (not official logos).
 const GLYPHS = {
@@ -115,6 +117,17 @@ const GLYPHS = {
       fill="#ea4335"
     />
   ),
+  reddit: (
+    <>
+      <ellipse cx="12" cy="13.600" rx="6.500" ry="4.600" fill="#fff" />
+      <circle cx="17.600" cy="9.600" r="1.500" fill="#fff" />
+      <circle cx="6.400" cy="9.600" r="1.500" fill="#fff" />
+      <circle cx="9.600" cy="13" r="1.100" fill="#ff4500" />
+      <circle cx="14.400" cy="13" r="1.100" fill="#ff4500" />
+      <path d="M9.600 15.700c1.400 1 3.400 1 4.800 0" fill="none" stroke="#ff4500" strokeWidth="1.100" strokeLinecap="round" />
+      <path d="M12 9V5.500l3 .8" fill="none" stroke="#fff" strokeWidth="1.200" strokeLinecap="round" strokeLinejoin="round" />
+    </>
+  ),
 }
 
 const BG = {
@@ -133,19 +146,41 @@ const BG = {
   snapchat: '#fffc00',
   messages: '#1a73e8',
   discord: '#5865f2',
+  reddit: '#ff4500',
 }
 
 export default function NetworkIcon({ network, size = 16, className = '' }) {
   const { isGray } = useGray()
+  // Apps Bird has no drawing for (ones you added): the site's own icon, else a letter.
+  const app = APPS[network]
+  const glyph = GLYPHS[network]
+  const [failed, setFailed] = useState(null)
+  const icon = !glyph && app?.icon && failed !== app.icon ? app.icon : null
   return (
     <span
       className={`net-icon ${isGray(network, 'icon') ? 'gray' : ''} ${className}`}
-      style={{ width: size, height: size, background: BG[network] }}
+      style={{ width: size, height: size, background: icon ? '#fff' : (BG[network] ?? app?.color ?? '#6b7280') }}
       title={network}
     >
-      <svg viewBox="0 0 24 24" width={size * 0.92} height={size * 0.92} aria-hidden="true">
-        {GLYPHS[network]}
-      </svg>
+      {glyph ? (
+        <svg viewBox="0 0 24 24" width={size * 0.92} height={size * 0.92} aria-hidden="true">
+          {glyph}
+        </svg>
+      ) : icon ? (
+        <img
+          src={icon}
+          alt=""
+          width={size * 0.72}
+          height={size * 0.72}
+          referrerPolicy="no-referrer"
+          draggable={false}
+          onError={() => setFailed(icon)}
+        />
+      ) : (
+        <span className="net-letter" style={{ fontSize: size * 0.55 }} aria-hidden="true">
+          {(app?.name ?? network).charAt(0).toUpperCase()}
+        </span>
+      )}
     </span>
   )
 }

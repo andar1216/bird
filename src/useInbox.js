@@ -30,6 +30,7 @@ export function inboxToChat(item) {
     network: item.app,
     name: item.name,
     colors: colorsFor(item.name),
+    avatar: item.avatar,
     lastMessage: { from: 'them', type: 'text', text: item.preview, sentAt: at },
     lastMessageAt: at,
     time: formatTime(at),

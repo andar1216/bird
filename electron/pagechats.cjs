@@ -41,12 +41,14 @@ const MESSAGES_READER = `(() => {
 // identified by its name and opened by clicking it.
 const INSTAGRAM_READER = `(() => {
   const out = []
+  // The list is newest first, so a row with no age sits near the one above it
+  let lastWhen = '1 min'
   const seen = new Set()
   for (const row of document.querySelectorAll('[role="button"]')) {
     if (row.closest('li')) continue
     const nameEl = row.querySelector('span[title]')
     const timeEl = row.querySelector('abbr[aria-label]')
-    if (!nameEl || !timeEl) continue
+    if (!nameEl) continue
     const name = (nameEl.getAttribute('title') || nameEl.textContent || '').trim()
     if (!name || seen.has(name)) continue
     seen.add(name)
@@ -57,15 +59,21 @@ const INSTAGRAM_READER = `(() => {
       if (t) texts.push({ t, el: n.parentElement })
     }
     const dot = texts.map((x) => x.t).lastIndexOf('\\u00b7')
-    const previewPart = dot > 0 && texts[dot - 1].t !== name ? texts[dot - 1] : null
+    let previewPart = dot > 0 && texts[dot - 1].t !== name ? texts[dot - 1] : null
+    // Group rows can have no age at all; their preview is then the last text
+    if (!timeEl && texts.length > 1 && texts[texts.length - 1].t !== name) previewPart = texts[texts.length - 1]
+    // Rows with neither an age nor a preview are not conversations
+    if (!timeEl && !previewPart) { seen.delete(name); continue }
     out.push({
       id: name,
       name,
       preview: previewPart ? previewPart.t : '',
-      when: timeEl.textContent,
+      when: timeEl ? timeEl.textContent : lastWhen,
+      avatar: ((row.querySelector('img[src^="https://"]') || {}).src) || '',
       unread: !!previewPart && Number(getComputedStyle(previewPart.el).fontWeight) >= 600,
       muted: false,
     })
+    if (timeEl) lastWhen = timeEl.textContent
     if (out.length >= __MAX__) break
   }
   return JSON.stringify(out)
@@ -122,6 +130,7 @@ const WHATSAPP_READER = `(() => {
       name,
       preview,
       when,
+      avatar: ((row.querySelector('img[src^="https://"]') || {}).src) || '',
       unread: !!badge,
       muted: !!row.querySelector('[data-icon="muted"], [aria-label="Muted" i]'),
     })
@@ -171,6 +180,7 @@ const SNAPCHAT_READER = `(() => {
       id,
       name,
       preview: status,
+      avatar: ((row.querySelector('img[src^="https://"]') || {}).src) || '',
       when: timeEl ? (timeEl.getAttribute('datetime') || timeEl.textContent) : '',
       unread: /^(new|received)/i.test(status),
       muted: false,
@@ -194,6 +204,23 @@ const snapchatClick = (name) => `(() => {
   }
   return false
 })()`
+// Snapchat ignores clicks made by scripts (a synthetic click opens the chat in a
+// half-loaded "You are no longer present" state), so the shell clicks for real at
+// the spot this returns: the middle of the row's button, scrolled into view first.
+const snapchatLocate = (name) => `(() => {
+  const wanted = ${JSON.stringify(String(name))}
+  for (const row of document.querySelectorAll(${JSON.stringify(SNAPCHAT_ROWS)})) {
+    const button = row.querySelector('[role="button"][aria-labelledby]')
+    const titleId = button && (button.getAttribute('aria-labelledby') || '').split(/\\s+/).find((s) => s.startsWith('title-'))
+    const el = titleId && document.getElementById(titleId)
+    if (!el || el.textContent.trim() !== wanted) continue
+    button.scrollIntoView({ block: 'nearest' })
+    const r = button.getBoundingClientRect()
+    if (r.width < 4 || r.height < 4) return null
+    return { x: r.left + Math.min(r.width / 2, 160), y: r.top + r.height / 2 }
+  }
+  return null
+})()`
 const READERS = {
   messages: {
     script: (max) => MESSAGES_READER.replace('__MAX__', String(max)),
@@ -211,6 +238,9 @@ const READERS = {
     rowSelector: SNAPCHAT_ROWS,
     virtual: true,
     clickScript: snapchatClick,
+    locateScript: snapchatLocate,
+    // Set while a chat is open in this dead state (see repair in main.cjs).
+    staleScript: '/no longer present/i.test(document.body.innerText)',
   },
   instagram: {
     url: 'https://www.instagram.com/direct/inbox/',
@@ -312,7 +342,8 @@ function normalize(app, json, now = Date.now(), limit = DEFAULT_LIMIT) {
     if (reader.pathPrefix && !/^[\w-]{1,120}$/.test(r.id)) return
     const name = clip(r.name, 80)
     if (!name) return
-    const at = parseWhen(r.when, now) ?? now - 7 * 86_400_000 - index * 1000
+    const known = parseWhen(r.when, now)
+    const at = known ?? now - 7 * 86_400_000 - index * 1000
     items.push({
       app,
       key: `page:${r.id}`,
@@ -322,6 +353,9 @@ function normalize(app, json, now = Date.now(), limit = DEFAULT_LIMIT) {
       at,
       unread: r.unread ? 1 : 0,
       muted: r.muted === true,
+      // No usable time on the page (e.g. an open chat hides it): the caller may know better.
+      guess: known === null ? true : undefined,
+      avatar: typeof r.avatar === 'string' && /^https:\/\/[^\s]{1,500}$/.test(r.avatar) ? r.avatar : undefined,
     })
   })
   return items.sort((a, b) => b.at - a.at).slice(0, limitOf(limit))

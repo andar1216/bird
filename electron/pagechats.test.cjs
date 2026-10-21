@@ -161,3 +161,13 @@ test('Snapchat chats are read from the Friends Feed rows', () => {
   assert.equal(vm.runInNewContext(reader.clickScript('Anna'), context), true)
   assert.equal(vm.runInNewContext(reader.clickScript('Nobody'), context), false)
 })
+
+test('a row with no readable time is flagged so the shell can keep what it knew', () => {
+  const json = JSON.stringify([
+    { id: 'a', name: 'Ann', preview: 'Close Chat', when: '' },
+    { id: 'b', name: 'Bo', preview: 'Hi', when: '5 min' },
+  ])
+  const [a, b] = normalize('snapchat', json, Date.parse('2026-10-20T22:00:00Z')).sort((x, y) => x.name.localeCompare(y.name))
+  assert.equal(a.guess, true)
+  assert.equal(b.guess, undefined)
+})
