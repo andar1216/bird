@@ -1,10 +1,15 @@
 // Per-app tweaks the user can switch on in the "Customize" panel.
 //
-// Deliberately limited to two low-risk mechanisms (no injected scripts):
+// Mechanisms, from least to most involved:
 //   - css:     hides parts of the page (applied with webContents.insertCSS)
 //   - block / rewrite / start: rules on page *addresses*, which change far less
 //     often than a site's markup.
+//   - requests: web addresses the page may not load at all (ad servers)
+//   - script:  code run in the page before its own scripts (used only where CSS and
+//     addresses can't do it, e.g. skipping video ads)
 // Tweaks that depend on a site's page layout can stop working when it changes.
+
+const { ADBLOCK_SCRIPT, ADBLOCK_CSS, ADBLOCK_REQUESTS } = require('./youtube-adblock.cjs')
 
 // An option may be `defaultOn`: it applies until the user switches it off.
 
@@ -78,6 +83,15 @@ CUSTOMIZATIONS.youtube = {
         /^\/shorts(\/|$)/.test(u.pathname) ||
         /^\/(@[^/]+|channel\/[^/]+|c\/[^/]+|user\/[^/]+)\/shorts\/?$/.test(u.pathname),
     },
+    {
+      id: 'blockAds',
+      label: 'Block ads',
+      description: 'Hides ad banners and ads in the feed, search and beside videos, and skips the ads in and before videos.',
+      defaultOn: true,
+      css: ADBLOCK_CSS,
+      script: ADBLOCK_SCRIPT,
+      requests: ADBLOCK_REQUESTS,
+    },
   ],
 }
 
@@ -136,6 +150,35 @@ function buildCss(networkId, prefs) {
     .join('\n')
 }
 
+/** Code to run in a page before its own scripts ('' when no option needs any). */
+function scriptFor(networkId, prefs) {
+  return active(networkId, prefs)
+    .map((o) => o.script)
+    .filter(Boolean)
+    .join('\n')
+}
+
+/** Whether switching this option needs the page reloaded (it runs a script). */
+function hasScript(networkId, optionId) {
+  return optionsOf(networkId).some((o) => o.id === optionId && o.script)
+}
+
+// "*://*.example.com/path*" -> a RegExp.
+function patternToRegExp(pattern) {
+  const body = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
+  return new RegExp(`^${body}$`, 'i')
+}
+
+/** Every address pattern an app's options may block (whether or not they are on now). */
+function requestPatterns(networkId) {
+  return [...new Set(optionsOf(networkId).flatMap((o) => o.requests ?? []))]
+}
+
+/** True if an option that is on blocks this request. */
+function blocksRequest(networkId, prefs, rawUrl) {
+  return active(networkId, prefs).some((o) => (o.requests ?? []).some((p) => patternToRegExp(p).test(rawUrl)))
+}
+
 /** True if the page at this address should not be shown. */
 function isBlocked(networkId, prefs, rawUrl) {
   const u = parse(rawUrl)
@@ -158,4 +201,17 @@ function startUrl(networkId, prefs) {
   return active(networkId, prefs).find((o) => o.start)?.start ?? null
 }
 
-module.exports = { describeAll, hasOption, effective, stored, buildCss, isBlocked, rewriteUrl, startUrl }
+module.exports = {
+  describeAll,
+  hasOption,
+  effective,
+  stored,
+  buildCss,
+  scriptFor,
+  hasScript,
+  requestPatterns,
+  blocksRequest,
+  isBlocked,
+  rewriteUrl,
+  startUrl,
+}

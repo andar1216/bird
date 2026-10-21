@@ -2,7 +2,7 @@
 // notifications arrive) must not pop up system dialogs, like the Windows "Choose a
 // passkey" box a sign-in page raises on its own. Passkey requests are refused until
 // you open that app yourself; main.cjs says when (window.__birdPasskeys).
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webFrame } = require('electron')
 
 let allowed = false
 try {
@@ -30,3 +30,12 @@ contextBridge.executeInMainWorld({
   },
   args: [allowed],
 })
+
+// Tweaks that need code in the page (e.g. YouTube's ad blocking) run now, before the
+// page's own scripts. main.cjs decides which, per app and per account.
+try {
+  const code = ipcRenderer.sendSync('bird:page-scripts')
+  if (typeof code === 'string' && code) webFrame.executeJavaScript(code).catch(() => {})
+} catch {
+  /* no tweaks */
+}

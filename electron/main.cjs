@@ -113,6 +113,13 @@ function lockDownSession(networkId, ses) {
   )
   keepSessionCookies(ses)
   googleSignInHeaders(ses)
+  // Requests that only serve ads (an app's own option decides whether they are blocked).
+  const adPatterns = custom.requestPatterns(networkId)
+  if (adPatterns.length) {
+    ses.webRequest.onBeforeRequest({ urls: adPatterns }, (details, callback) => {
+      callback({ cancel: custom.blocksRequest(networkId, prefsFor(networkId), details.url) })
+    })
+  }
 }
 
 // Google refuses to sign you in ("This browser or app may not be secure") when the
@@ -1110,6 +1117,20 @@ ipcMain.on('bird:set-app-pref', (_event, networkId, optionId, value) => {
   // Show the change right away in an app that is already open.
   applyCss(networkId)
   enforceRules(networkId)
+  // A tweak that runs code in the page takes effect when the page loads again.
+  if (custom.hasScript(networkId, optionId)) {
+    const wc = views.get(networkId)?.view.webContents
+    if (wc && !wc.isDestroyed()) wc.reload()
+  }
+})
+
+// The code an app's page runs before its own scripts (read by network-preload.cjs).
+ipcMain.on('bird:page-scripts', (event) => {
+  let found = null
+  for (const [id, entry] of views) {
+    if (entry.view.webContents.id === event.sender.id) found = id
+  }
+  event.returnValue = found && currentUserId ? custom.scriptFor(found, prefsFor(found)) : ''
 })
 
 // The dev launcher (scripts/launch.mjs) asks for a clean quit by creating this
