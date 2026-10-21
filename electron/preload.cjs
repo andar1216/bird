@@ -25,6 +25,10 @@ contextBridge.exposeInMainWorld('bird', {
   setCustomApps: (list) => ipcRenderer.send('bird:set-custom-apps', list),
   unlinkApp: (id) => ipcRenderer.invoke('bird:unlink-app', id),
   setBackgroundApps: (ids) => ipcRenderer.send('bird:set-background-apps', ids),
+  // Back / Forward in an app's page history (e.g. between YouTube videos).
+  navigate: (id, dir) => ipcRenderer.send('bird:navigate', id, dir),
+  getNav: (id) => ipcRenderer.invoke('bird:get-nav', id),
+  onNav: (cb) => subscribe('bird:nav', cb),
   // An app can open in a window of its own (drag its icon out of the bar).
   detachApp: (id, x, y) => ipcRenderer.send('bird:detach-app', id, x, y),
   attachApp: (id) => ipcRenderer.send('bird:attach-app', id),

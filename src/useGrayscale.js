@@ -38,7 +38,9 @@ function load(userId) {
       Object.entries(saved.a ?? {}).map(([id, m]) => [id, { icon: m, screen: m }]),
     )
     for (const [id, modes] of Object.entries(perApp)) {
-      if (!APPS[id]) continue
+      // Not checked against APPS: a custom app (YouTube, say) is only registered
+      // once the app list has loaded, which can be after this runs. Entries for
+      // apps that no longer exist are harmless.
       for (const k of KINDS) {
         if (modes?.[k] === 'on' || modes?.[k] === 'off') (out.apps[id] ??= {})[k] = modes[k]
       }
@@ -80,6 +82,8 @@ export function useGrayscale(userId) {
   }, [state])
 
   const { isGray } = value
+  // Custom apps join APPS while the app list is in use, so re-push when they change.
+  const appIds = Object.keys(APPS).join(',')
   useEffect(() => {
     // The shell only needs to know which pages to grey.
     bird?.setGrayscale?.(Object.fromEntries(Object.keys(APPS).map((id) => [id, isGray(id, 'screen')])))
@@ -88,7 +92,7 @@ export function useGrayscale(userId) {
     } catch {
       /* the choice just won't persist */
     }
-  }, [userId, state, isGray])
+  }, [userId, state, isGray, appIds])
 
   return value
 }

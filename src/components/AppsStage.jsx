@@ -5,6 +5,7 @@ import NetworkIcon from './NetworkIcon'
 import { APPS } from '../data'
 import { bird } from '../bird'
 import { CONVERSATION_CHOICES } from '../useConversationLimit'
+import { BackIcon } from './Icons'
 
 // Main pane for an app: a small header (its settings icon opens a dropdown with
 // grayscale, any app tweaks and unlinking the account), and below it the area
@@ -23,6 +24,20 @@ export default function AppsStage({ network, conversations, inOwnWindow = false 
   }, [network])
 
   const bodyRef = useRef(null)
+  // Whether the app's page can go back or forward (e.g. between YouTube videos).
+  const [nav, setNav] = useState({ canGoBack: false, canGoForward: false })
+  useEffect(() => {
+    if (!bird?.getNav) return undefined
+    let live = true
+    bird.getNav(network).then((s) => live && setNav(s))
+    const off = bird.onNav((s) => {
+      if (s.id === network) setNav({ canGoBack: s.canGoBack, canGoForward: s.canGoForward })
+    })
+    return () => {
+      live = false
+      off()
+    }
+  }, [network])
   const [options, setOptions] = useState([])
   const [prefs, setPrefs] = useState({})
   // The per-app settings dropdown; closed until you ask for it.
@@ -90,6 +105,28 @@ export default function AppsStage({ network, conversations, inOwnWindow = false 
   return (
     <main className="chat apps-pane">
       <div className="app-bar">
+        {bird?.navigate && (
+          <span className="nav-btns">
+            <button
+              className="app-bar-icon"
+              onClick={() => bird.navigate(network, 'back')}
+              disabled={!nav.canGoBack}
+              aria-label="Back"
+              title="Back (Alt+Left)"
+            >
+              <BackIcon width={20} height={20} />
+            </button>
+            <button
+              className="app-bar-icon forward"
+              onClick={() => bird.navigate(network, 'forward')}
+              disabled={!nav.canGoForward}
+              aria-label="Forward"
+              title="Forward (Alt+Right)"
+            >
+              <BackIcon width={20} height={20} />
+            </button>
+          </span>
+        )}
         <button
           className="app-bar-title"
           onClick={toggleSettings}

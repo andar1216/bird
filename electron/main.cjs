@@ -262,6 +262,19 @@ function createNetworkView(id) {
   wc.on('did-navigate-in-page', (_event, url, isMainFrame) => {
     if (isMainFrame) enforceRules(id)
   })
+  // Bird's own Back and Forward buttons follow the page's history.
+  const pushNav = () => {
+    if (!wc.isDestroyed()) sendToUI('bird:nav', { id, ...navState(wc) })
+  }
+  for (const event of ['did-navigate', 'did-navigate-in-page', 'did-finish-load']) wc.on(event, pushNav)
+  // Alt+Left and Alt+Right go back and forward, like in a browser.
+  wc.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || !input.alt || input.control || input.shift || input.meta) return
+    if (input.key === 'ArrowLeft' || input.key === 'ArrowRight') {
+      event.preventDefault()
+      navigateApp(id, input.key === 'ArrowLeft' ? 'back' : 'forward')
+    }
+  })
   // Inserted CSS belongs to one document, so apply it to every new page.
   wc.on('dom-ready', () => {
     applyCss(id)
@@ -426,6 +439,30 @@ function createNetworkView(id) {
   wc.loadURL(custom.startUrl(id, prefsFor(id)) ?? net.url)
   sendToUI('bird:status', statusSnapshot())
   return entry
+}
+
+// Whether an app's page can go back or forward (e.g. from one YouTube video to the last).
+const navState = (wc) => ({
+  canGoBack: wc.navigationHistory.canGoBack(),
+  canGoForward: wc.navigationHistory.canGoForward(),
+})
+
+function navigateApp(id, dir) {
+  const wc = views.get(id)?.view.webContents
+  if (!wc || wc.isDestroyed()) return
+  const history = wc.navigationHistory
+  if (dir === 'back' && history.canGoBack()) history.goBack()
+  else if (dir === 'forward' && history.canGoForward()) history.goForward()
+}
+
+// The mouse's side buttons and the keyboard's browser keys (Windows "app commands").
+function backForwardKeys(window, appIdNow) {
+  window.on('app-command', (_event, command) => {
+    const id = appIdNow()
+    if (!id) return
+    if (command === 'browser-backward') navigateApp(id, 'back')
+    else if (command === 'browser-forward') navigateApp(id, 'forward')
+  })
 }
 
 // (Re)apply the user's CSS tweaks to a network's current page.
@@ -789,6 +826,7 @@ function detachApp(id, point) {
     sendInbox()
     scheduleInboxSave()
   }
+  backForwardKeys(pop, () => id)
   pop.on('resize', () => fitDetached(entry))
   pop.on('show', () => fitDetached(entry))
   for (const event of ['focus', 'blur', 'show', 'hide', 'minimize', 'restore']) pop.on(event, trackUsage)
@@ -859,6 +897,7 @@ function createWindow() {
     usage?.set(null)
     usage?.save()
   })
+  backForwardKeys(win, () => (views.get(activeId)?.detachedWin ? null : activeId))
   for (const event of ['focus', 'blur', 'show', 'hide', 'minimize', 'restore']) win.on(event, trackUsage)
   win.on('closed', () => {
     for (const entry of views.values()) {
@@ -1036,31 +1075,18 @@ ipcMain.on('bird:attach-app', (_event, id) => {
 })
 ipcMain.handle('bird:get-detached', () => detachedIds())
 
+// Back / Forward for the app being shown.
+ipcMain.on('bird:navigate', (_event, id, dir) => {
+  if (typeof id === 'string' && (dir === 'back' || dir === 'forward')) navigateApp(id, dir)
+})
+ipcMain.handle('bird:get-nav', (_event, id) => {
+  const wc = typeof id === 'string' ? views.get(id)?.view.webContents : null
+  return wc && !wc.isDestroyed() ? navState(wc) : { canGoBack: false, canGoForward: false }
+})
+
 ipcMain.handle('bird:get-status', () => statusSnapshot())
 ipcMain.handle('bird:get-listing', () => listingIds())
 
-// TEMPORARY dev-only probe: logs/eval-in.txt = "<appId>\n<js>" runs in that app's page
-// (or its hidden reader page) and the JSON result lands in logs/eval-out.txt.
-if (isDev) {
-  const dir = path.join(__dirname, '..', 'logs')
-  setInterval(async () => {
-    const inFile = path.join(dir, 'eval-in.txt')
-    if (!fs.existsSync(inFile)) return
-    const text = fs.readFileSync(inFile, 'utf8')
-    fs.unlinkSync(inFile)
-    const nl = text.indexOf('\n')
-    const [id, reader] = text.slice(0, nl).trim().split(':')
-    const entry = views.get(id)
-    const wc = reader === 'reader' ? entry?.readerView?.webContents : entry?.view.webContents
-    let out
-    try {
-      out = wc ? JSON.stringify(await wc.executeJavaScript(text.slice(nl + 1)), null, 1) : 'no such page'
-    } catch (err) {
-      out = 'ERR ' + err.message
-    }
-    fs.writeFileSync(path.join(dir, 'eval-out.txt'), out ?? 'undefined')
-  }, 1500)
-}
 ipcMain.on('bird:set-grayscale', (_event, map) => {
   if (!map || typeof map !== 'object') return
   const next = {}

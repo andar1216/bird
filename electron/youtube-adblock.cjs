@@ -128,9 +128,13 @@ const ADBLOCK_CSS =
     'ytd-primetime-promo-renderer',
     'yt-mealbar-promo-renderer',
     'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"]',
-    'ytd-rich-item-renderer:has(> #content > ytd-ad-slot-renderer)',
-    'ytd-rich-section-renderer:has(ytd-statement-banner-renderer)',
-    'ytd-rich-section-renderer:has(ytd-ad-slot-renderer)',
+    // Hide the whole grid cell or section an ad sits in, not just the ad, so the
+    // videos around it move up to fill the space (the home grid wraps its items).
+    'ytd-rich-item-renderer:has(ytd-ad-slot-renderer, ytd-in-feed-ad-layout-renderer, ytd-display-ad-renderer, ytd-promoted-sparkles-web-renderer)',
+    'ytd-rich-section-renderer:has(ytd-statement-banner-renderer, ytd-ad-slot-renderer, ytd-in-feed-ad-layout-renderer, ytd-display-ad-renderer, ytd-banner-promo-renderer)',
+    // A list of videos (the next-video list, search results) that holds only ads.
+    'ytd-item-section-renderer:has(> #contents > ytd-ad-slot-renderer):not(:has(> #contents > :not(ytd-ad-slot-renderer)))',
+    'ytd-compact-video-renderer:has(ytd-ad-slot-renderer)',
     'ytd-search-pyv-renderer',
     'tp-yt-paper-dialog:has(ytd-enforcement-message-view-model)',
     'ytd-enforcement-message-view-model',

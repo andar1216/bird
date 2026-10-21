@@ -1162,3 +1162,8 @@
 }
 .apps-limit .apps-limit-note { font-weight: 400; margin-right: 0; }
 .apps-limit .stepper { margin-right: 0; font-weight: 400; }
+
+.nav-btns { display: inline-flex; gap: 2px; margin-right: 8px; }
+.nav-btns .app-bar-icon:disabled { opacity: 0.3; cursor: default; }
+.nav-btns .app-bar-icon:disabled:hover { background: transparent; color: inherit; }
+.nav-btns .forward svg { transform: scaleX(-1); }
